@@ -1,4 +1,6 @@
-tensorflow==2.11.*
+#tensorflow==2.11.*
+tensorflow==2.13.*
+tensorflow-metal
 numpy
 scikit-learn
 matplotlib
