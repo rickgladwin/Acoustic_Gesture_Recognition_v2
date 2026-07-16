@@ -5,10 +5,15 @@ import json
 import argparse
 import numpy as np
 import tensorflow as tf
+from sklearn.model_selection import train_test_split
 from tensorflow import keras
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
 import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
+
+import config
+from ultrasound_gesture_vit_classification import plot_history_separately
+
 
 # ----------------------------
 # Helpers
@@ -104,6 +109,14 @@ class TqdmProgress(keras.callbacks.Callback):
 # Data loading
 # ----------------------------
 def load_subject_arrays(root, mode, subject, image_size):
+    # TODO: perform preprocessing that:
+    # - averages out the "static" noise in the ultrasound video from frame to frame (*? is there a way to
+    #   mathematically determine what the frequency and shape of this noise is, in order to:
+    #   -- filter it out/average over it
+    #   -- augment the dataset with similar noise that should be ignored
+    #   )
+    # - combines data from different subjects
+
     d = os.path.join(root, mode, subject)
     x_train = np.load(os.path.join(d, "X_m_train.npy"))
     x_test  = np.load(os.path.join(d, "X_m_test.npy"))
@@ -147,11 +160,29 @@ def build_cnn(input_shape, num_classes,
         x = keras.layers.Conv2D(f, (kernel_size, kernel_size), padding="same", activation="relu")(x)
         x = keras.layers.BatchNormalization(axis=chan_dim)(x)
         x = keras.layers.MaxPooling2D(pool_size=(pool_size, pool_size))(x)
+        
+    # TODO: look at depthwise maxpooling somewhere in this 2D CNN, in the Conv2D layers, far enough along that filters have
+    #  been established, so that collections of similar filters can be pooled in a way that sums over "noisy" variations on
+    #  the same filter (see Géron - depthwise maxpooling)
 
+    # TODO: look at transfer learning strategies that use the weights from a trained 2D CNN (the layers before this
+    #  point in the model) and use that as the starting point when training on another subject's data, to see if
+    #  training will be faster/more accurate
+    
+    # TODO: look at different ways of combining/augmenting/using transfer learning in ways that separate the two parts
+    #  of the CNN model – the filters and the Dense/ANN layers. Include different ways of combining the data from
+    #  different subjects – train the different segments of the model(s) on the original, moving-average, and
+    #  combined data. 
+    
     x = keras.layers.Flatten()(x)
     x = keras.layers.Dense(dense_units, activation="relu")(x)
     x = keras.layers.BatchNormalization(axis=chan_dim)(x)
+    # TODO: try additional dropout layers (have a look at where dropout is used in other 2D CNN and similar visual classification architectures)
     x = keras.layers.Dropout(dropout)(x)
+    
+    # TODO: add additional learning layers (the Dense/ANN layers) to the model (with dropout and other methods to avoid
+    #  overtraining)
+    
 
     outputs = keras.layers.Dense(num_classes)(x)  # logits
     model = keras.Model(inputs, outputs)
@@ -169,7 +200,8 @@ def main():
     ap = argparse.ArgumentParser(description="CNN gesture classifier (single subject) with progress bars + metrics.")
     # Paths / data
     ap.add_argument("--root", type=str,
-        default=r"C:\Users\bimbr\Documents\Mirror_Paper\Data_Upload",
+        # default=r"C:\Users\bimbr\Documents\Mirror_Paper\Data_Upload",
+        default=config.default_dataset_path,
         help="Root folder containing 'mirror' and 'perp'.")
     ap.add_argument("--mode", type=str, choices=["mirror", "perp"], default="mirror",
         help="Dataset mode: mirror or perp.")
@@ -199,10 +231,29 @@ def main():
     set_seed(args.seed)
 
     # Load data
+    print(f"-- Loading data from: {args.root}...")
+
     (x_train, y_train), (x_test, y_test), num_classes = load_subject_arrays(
         args.root, args.mode, args.subject, args.image_size
     )
+    print(f"-- loaded {len(x_train)} training samples and {len(x_test)} test samples for {num_classes} classes")
+
     input_shape = (args.image_size, args.image_size, 1)
+    print(f"-- input shape: {input_shape}")
+
+    # The raw training arrays are grouped by class, so Keras' validation_split
+    # would take a non-representative tail slice. Use an explicit stratified split.
+    x_train_fit, x_val, y_train_fit, y_val = train_test_split(
+        x_train,
+        y_train,
+        test_size=args.val_split,
+        random_state=args.seed,
+        stratify=y_train,
+        shuffle=True,
+    )
+    print(f"-- train/val split: {len(x_train_fit)} train samples, {len(x_val)} val samples")
+
+    model: keras.Model
 
     # Build or load
     if args.load_model and os.path.isfile(args.load_model):
@@ -230,14 +281,24 @@ def main():
 
     # Train
     if not trained:
+        print(f"-- training model for '{args.mode}/{args.subject}'...")
         history = model.fit(
-            x_train, y_train,
+            # x_train, y_train,
+            x_train_fit, y_train_fit,
             batch_size=args.batch_size,
             epochs=args.epochs,
-            validation_split=args.val_split,
+            # validation_split=args.val_split,
+            validation_data=(x_val, y_val),
             callbacks=callbacks,
             verbose=verbose
         )
+
+        print(f"-- training complete.")
+    
+        print(f"plotting training history...")
+    
+        plot_history_separately(history)
+        # plot_history_together(history)
 
     # Evaluate
     logits = model.predict(x_test, verbose=0)
@@ -248,7 +309,8 @@ def main():
         y_test, y_pred, average="macro", zero_division=0
     )
 
-    print(f"\n[{args.mode}/{args.subject}] Test Accuracy: {acc:.4f}")
+    print(f"\n[{args.mode}/{args.subject}]   Test Accuracy: {acc:.4f}")
+    print(f"[{args.mode}/{args.subject}] Random Accuracy: {1/num_classes:.4f}")
     print(f"[{args.mode}/{args.subject}] Macro Precision: {prec:.4f}  Macro Recall: {rec:.4f}  Macro F1: {f1:.4f}")
 
     # Save artifacts

@@ -11,6 +11,12 @@ from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
 import joblib
 
+import config
+
+# TODO: use skmetal for MPS optimization
+# https://www.reddit.com/r/askdatascience/comments/1ua4oiq/project_skmetal_dropin_gpu_acceleration_for/
+
+
 # ----------------------------
 # Helpers
 # ----------------------------
@@ -76,7 +82,8 @@ def main():
     ap = argparse.ArgumentParser(description="SVM gesture classifier (single subject) with metrics + artifacts.")
     # Paths / data
     ap.add_argument("--root", type=str,
-        default=r"C:\Users\bimbr\Documents\Mirror_Paper\Data_Upload",
+        # default=r"C:\Users\bimbr\Documents\Mirror_Paper\Data_Upload",
+        default=config.default_dataset_path,
         help="Root folder containing 'mirror' and 'perp'.")
     ap.add_argument("--mode", type=str, choices=["mirror", "perp"], default="mirror",
         help="Dataset mode.")
@@ -102,10 +109,16 @@ def main():
 
     args = ap.parse_args()
 
+    print(f"-- Loading data from: {args.root}...")
+
     # Data
     (x_train, y_train), (x_test, y_test), num_classes = load_subject_arrays(
         args.root, args.mode, args.subject
     )
+    print(f"-- loaded {len(x_train)} training samples and {len(x_test)} test samples for {num_classes} classes")
+    
+    # input_shape = (args.image_size, args.image_size, 1)
+    # print(f"-- input shape: {input_shape}")
 
     # Build / load
     if args.load_model and os.path.isfile(args.load_model):
@@ -114,7 +127,9 @@ def main():
         trained = True
     else:
         # gamma handling (rbf only): allow numeric strings (e.g., "0.01")
-        gamma_param = None  # ignored for linear
+        # gamma_param = None  # ignored for linear -- throws error
+        # sklearn.utils._param_validation.InvalidParameterError: The 'gamma' parameter of SVC must be a str among {'auto', 'scale'} or a float in the range [0.0, inf). Got None instead.
+        gamma_param = args.gamma
         if args.kernel == "rbf":
             gamma_param = args.gamma
             try:
@@ -129,7 +144,7 @@ def main():
             gamma=gamma_param,                 # None for linear; 'scale'/'auto'/float for rbf
             class_weight=(None if args.class_weight == "" else args.class_weight),
             max_iter=args.max_iter,
-            verbose=False,
+            verbose=True,
         )
         steps = []
         if not args.no_scale:
@@ -143,13 +158,15 @@ def main():
         trained = False
 
     # Predict & Metrics
+    print(f"\n[{args.mode}/{args.subject}] Predicting and calculating metrics...")
     y_pred = clf.predict(x_test)
     acc = accuracy_score(y_test, y_pred)
     prec, rec, f1, _ = precision_recall_fscore_support(
         y_test, y_pred, average="macro", zero_division=0
     )
 
-    print(f"\n[{args.mode}/{args.subject}] Test Accuracy: {acc:.4f}")
+    print(f"\n[{args.mode}/{args.subject}]   Test Accuracy: {acc:.4f}")
+    print(f"[{args.mode}/{args.subject}] Random Accuracy: {1/num_classes:.4f}")
     print(f"[{args.mode}/{args.subject}] Macro Precision: {prec:.4f}  Macro Recall: {rec:.4f}  Macro F1: {f1:.4f}")
 
     # Artifacts

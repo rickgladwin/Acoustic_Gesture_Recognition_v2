@@ -4,13 +4,20 @@ import os
 import json
 import argparse
 import numpy as np
+import pandas as pd
 import tensorflow as tf
+from keras.src.callbacks import History
 from tensorflow import keras
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
 import matplotlib.pyplot as plt
+# import torch
 
 # Progress bar (console "trackbar")
 from tqdm.auto import tqdm
+
+import config
+
 
 # ============================
 # Helpers
@@ -22,13 +29,16 @@ def set_seed(seed: int):
     np.random.seed(seed)
     tf.random.set_seed(seed)
 
+
 def ensure_dir(p):
     """Create parent directory for a file path if it does not exist."""
     if p:
         os.makedirs(os.path.dirname(p), exist_ok=True)
 
+
 def save_confusion_matrix_png(y_true, y_pred, path):
     """Save a simple confusion matrix figure to PNG."""
+    print(f"-- saving confusion matrix to '{path}'...")
     if not path:
         return
     ensure_dir(path)
@@ -45,6 +55,7 @@ def save_confusion_matrix_png(y_true, y_pred, path):
 
 def dump_json(obj, path):
     """Dump a JSON file with nice indentation."""
+    print(f"-- saving JSON results to '{path}'...")
     if not path:
         return
     ensure_dir(path)
@@ -125,6 +136,17 @@ class TqdmProgress(keras.callbacks.Callback):
 # ============================
 class Patches(keras.layers.Layer):
     """Split the input image into non-overlapping patches."""
+    # TODO: ** add attention biasing layer
+    # TODO: split ViT into multiple channels, one for each degree of freedom OR combination of DOF for each gesture
+    # TODO: recombine DOF channels before the fully connected (MLP) layer(s) (or whatever is used after the ViT)
+    # 
+    # TODO: try different patch sizes
+    # TODO: try a different method for splitting the image into patches, e.g. using convolutions or contouring
+    #  to pick out significant regions/shapes
+    # TODO: contouring is an outdated method for priming or masking patches for ViTs. 
+    #  But a human expert could assign masking starting points for a multi-channel ViT, where each channel
+    #  could include a mask for an individual muscle or for a set of muscles involved in synergistic movement of
+    #  a given DOF.
     def __init__(self, patch_size):
         super().__init__()
         self.patch_size = patch_size
@@ -180,6 +202,15 @@ def build_vit(input_shape, num_classes,
         x3 = keras.layers.LayerNormalization(epsilon=1e-6)(x2)
         x3 = mlp(x3, hidden_units=transformer_units, dropout_rate=0.1)
         encoded = keras.layers.Add()([x3, x2])
+        
+    # TODO: play with the number of dropout layers in the ViT and their placement
+    # TODO: see if a recurrent connection is appropriate (are there enough unshuffled frames in each 100-frame
+    #  labelled sequence in the dataset to use the time-dependent information, or do I need a different dataset
+    #  for that?)
+    # TODO: see if a contour-based method, rather than the uniform 16x16 grid, would work for the initial selection
+    #  of attention regions for this ViT. These images may be good candidates – the shapes we're looking at don't have
+    #  foreground and background regions nor internal/hierarchical objects, like a dog's face. They're basic shapes
+    #  like oblong/oval shapes, blobs or rings of light on dark.
 
     representation = keras.layers.LayerNormalization(epsilon=1e-6)(encoded)
     representation = keras.layers.Flatten()(representation)
@@ -234,20 +265,88 @@ def load_subject_arrays(root, mode, subject, image_size):
     num_classes = int(max(y_train.max(), y_test.max()) + 1)
     return (x_train, y_train), (x_test, y_test), num_classes
 
+def plot_history_together(training_history: History):
+    # Convert history dictionary to DataFrame
+    history_df = pd.DataFrame(training_history.history)
+    
+    # Plot all metrics at once
+    history_df.plot(figsize=(10, 6))
+    plt.grid(True)
+    # plt.gca().set_ylim(0, 1) # Optional: clamp y-axis between 0 and 1 for accuracy
+    plt.xlabel("Epochs")
+    plt.show()
+    
+def plot_history_separately(training_history: History):
+    # Create a figure with two subplots side-by-side
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Plot Training & Validation Loss
+    ax1.plot(training_history.history['loss'], label='Train Loss', color='blue', linewidth=2)
+    if 'val_loss' in training_history.history:
+        ax1.plot(training_history.history['val_loss'], label='Val Loss', color='orange', linestyle='--', linewidth=2)
+    ax1.set_title('Model Loss Over Epochs')
+    ax1.set_xlabel('Epochs')
+    ax1.set_ylabel('Loss')
+    ax1.legend()
+    ax1.grid(True)
+    
+    # Plot Training & Validation Accuracy
+    # Note: Use 'acc' instead of 'accuracy' if you are using an older Keras version
+    acc_key = 'accuracy' if 'accuracy' in training_history.history else 'acc'
+    ax2.plot(training_history.history[acc_key], label='Train Accuracy', color='blue', linewidth=2)
+    
+    val_acc_key = 'val_' + acc_key
+    if val_acc_key in training_history.history:
+        ax2.plot(training_history.history[val_acc_key], label='Val Accuracy', color='orange', linestyle='--', linewidth=2)
+    ax2.set_title('Model Accuracy Over Epochs')
+    ax2.set_xlabel('Epochs')
+    ax2.set_ylabel('Accuracy')
+    ax2.legend()
+    ax2.grid(True)
+    
+    plt.tight_layout()
+    plt.show()
+
+
 # ============================
 # Main
 # ============================
 def main():
+    # TODO: ** find additional ViT examples (with attention biasing)
+    # TODO: ** find any ultrasound ViT examples (with or without attention biasing)
+
+    # MPS for pytorch
+    # confirm that an accelerator device is available (we expect
+    # mps.device_count >= 1)
+    # print(f"checking mps.device_count using pytorch...")
+    # print(f"mps.device_count: {torch.mps.device_count()}")
+    # use the MPS Pytorch accelerator (see https://docs.pytorch.org/docs/stable/mps.html#module-torch.mps)
+    # mps_device = torch.device("mps:0" if torch.mps.is_available() else "cpu")
+    
+    # MPS for tensorflow
+    print(f"\nchecking device count using tensorflow-metal...")
+    # Check for available physical devices
+    physical_devices = tf.config.list_physical_devices('GPU')
+    
+    if len(physical_devices) > 0:
+        print(f"✅ Metal GPU Acceleration is active! Found: {physical_devices}")
+    else:
+        print("❌ GPU not found. TensorFlow is falling back to the CPU.")
+    
+    # exit(0)
+    
     parser = argparse.ArgumentParser(description="Run ViT on Subject_1 ultrasound data with progress bars.")
     # Paths / data
     parser.add_argument("--root", type=str,
-        default=r"C:\Users\bimbr\Documents\Mirror_Paper\Data_Upload",
+        # default=r"C:\Users\bimbr\Documents\Mirror_Paper\Data_Upload",
+        # default=r"/Users/rickgladwin/Code/u_of_hull/dissertation/bimbraw_2025_dataset/data/",
+        default=config.default_dataset_path,
         help="Root folder containing 'mirror' and 'perp'.")
     parser.add_argument("--mode", type=str, choices=["mirror", "perp"], default="mirror",
         help="Dataset mode: mirror or perp.")
     parser.add_argument("--subject", type=str, default="Subject_1",
         help="Subject folder name.")
-    parser.add_argument("--image-size", type=int, default=320,
+    parser.add_argument("--image-size", type=int, default=640,
         help="Model input size (pixels).")
     # Training
     parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs.")
@@ -266,10 +365,27 @@ def main():
     set_seed(args.seed)
 
     # Load data
+    print(f"-- Loading data from: {args.root}...")
     (x_train, y_train), (x_test, y_test), num_classes = load_subject_arrays(
         args.root, args.mode, args.subject, args.image_size
     )
+    print(f"-- loaded {len(x_train)} training samples and {len(x_test)} test samples for {num_classes} classes")
     input_shape = (args.image_size, args.image_size, 1)
+    print(f"-- input shape: {input_shape}")
+
+    # The raw training arrays are grouped by class, so Keras' validation_split
+    # would take a non-representative tail slice. Use an explicit stratified split.
+    x_train_fit, x_val, y_train_fit, y_val = train_test_split(
+        x_train,
+        y_train,
+        test_size=args.val_split,
+        random_state=args.seed,
+        stratify=y_train,
+        shuffle=True,
+    )
+    print(f"-- train/val split: {len(x_train_fit)} train samples, {len(x_val)} val samples")
+    
+    model: keras.Model
 
     # Build or load model
     if args.load_model and os.path.isfile(args.load_model):
@@ -303,16 +419,23 @@ def main():
 
     # Train (unless we loaded a pre-trained model)
     if not trained:
+        print(f"-- training model for '{args.mode}/{args.subject}'...")
         # Note: with verbose=0, Keras won’t print per-batch/epoch lines; tqdm shows the progress instead.
         history = model.fit(
-            x_train, y_train,
+            x_train_fit, y_train_fit,
             batch_size=args.batch_size,
             epochs=args.epochs,
-            validation_split=args.val_split,
+            validation_data=(x_val, y_val),
             callbacks=callbacks,
             verbose=verbose
         )
+        print(f"-- training complete.")
+        
+        print(f"plotting training history...")
 
+        plot_history_separately(history)
+        # plot_history_together(history)
+    
     # Evaluate on test
     logits = model.predict(x_test, verbose=0)
     y_pred = np.argmax(logits, axis=1)
@@ -322,7 +445,8 @@ def main():
         y_test, y_pred, average="macro", zero_division=0
     )
 
-    print(f"\n[{args.mode}/{args.subject}] Test Accuracy: {acc:.4f}")
+    print(f"\n[{args.mode}/{args.subject}]   Test Accuracy: {acc:.4f}")
+    print(f"[{args.mode}/{args.subject}] Random Accuracy: {1/num_classes:.4f}")
     print(f"[{args.mode}/{args.subject}] Macro Precision: {prec:.4f}  Macro Recall: {rec:.4f}  Macro F1: {f1:.4f}")
 
     # Save CM and model/metrics if requested
@@ -360,4 +484,6 @@ def main():
         print(f"Saved metrics JSON to: {args.out}")
 
 if __name__ == "__main__":
+    # example command:
+    # python3.10 ultrasound_gesture_vit_classification.py --mode perp --subject Subject_1 --epochs 2 --batch-size 64 --save-model results/vit_mirror_subject1.keras --out results/subject1_vit_mirror.json --cm results/figs/subject1_vit_mirror_cm.png
     main()
