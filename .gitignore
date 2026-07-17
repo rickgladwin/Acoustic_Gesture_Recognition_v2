@@ -1,3 +1,6 @@
+# trained model files (typically GB size files for SVC)
+results/*.keras
+
 Data/
 
 # Byte-compiled / optimized / DLL files
