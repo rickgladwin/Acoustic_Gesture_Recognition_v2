@@ -42,6 +42,9 @@ def save_confusion_matrix_png(y_true, y_pred, path):
     fig.colorbar(im, ax=ax)
     ax.set_xlabel("Predicted")
     ax.set_ylabel("True")
+    # set the class labels on the x and y axes explicitly
+    ax.set_xticks(np.arange(len(np.unique(y_pred))))
+    ax.set_yticks(np.arange(len(np.unique(y_true))))
     fig.tight_layout()
     plt.savefig(path, dpi=150)
     plt.close(fig)
@@ -108,7 +111,30 @@ class TqdmProgress(keras.callbacks.Callback):
 # ----------------------------
 # Data loading
 # ----------------------------
-def load_subject_arrays(root, mode, subject, image_size):
+def load_subject_arrays(root: str, mode: str, subject: str, image_size: int):
+    """
+    Loads and preprocesses ultrasound data for training and testing. This function handles loading of data
+    from disk, ensures data consistency, resizes images, normalizes the data, and returns the processed
+    datasets along with the number of classes. It is specifically used for preparing ultrasound images for
+    machine learning tasks, such as classification or segmentation.
+
+    Parameters:
+    root: str
+        The root directory containing the dataset.
+    mode: str
+        The mode of data capture, one of ["mirror", "perp"], depending on the orientation of the ultrasound probe.
+    subject: str
+        Identifier of the subject whose data is to be loaded, one of ["Subject_1", "Subject_2", "Subject_3", "Subject_4", "Subject_5", "Subject_6"].
+    image_size: int
+        Desired width and height for image resizing. The function assumes a square dimension.
+
+    Returns:
+    tuple
+        A tuple consisting of:
+        - (x_train, y_train): Processed training dataset (features, labels).
+        - (x_test, y_test): Processed testing dataset (features, labels).
+        - num_classes: The total number of unique gesture classes in the dataset (12, for the 2025 mirror/perp dataset).
+    """
     # TODO: perform preprocessing that:
     # - averages out the "static" noise in the ultrasound video from frame to frame (*? is there a way to
     #   mathematically determine what the frequency and shape of this noise is, in order to:
@@ -117,20 +143,23 @@ def load_subject_arrays(root, mode, subject, image_size):
     #   )
     # - combines data from different subjects
 
+    # example folder path to data:
+    # /home/username/ultrasound_gesture_data/mirror/Subject_1/
     d = os.path.join(root, mode, subject)
     x_train = np.load(os.path.join(d, "X_m_train.npy"))
     x_test  = np.load(os.path.join(d, "X_m_test.npy"))
-    y_train = np.load(os.path.join(d, "y_m_train.npy"))
-    y_test  = np.load(os.path.join(d, "y_m_test.npy"))
+    y_train: np.ndarray = np.load(os.path.join(d, "y_m_train.npy"))
+    y_test: np.ndarray  = np.load(os.path.join(d, "y_m_test.npy"))
 
     y_train = y_train.astype(np.int64).ravel()
     y_test  = y_test.astype(np.int64).ravel()
 
-    # Ensure channel dim (N,H,W,1)
+    # Ensure channel dim (N, H, W, 1)
     if x_train.ndim == 3: x_train = x_train[..., np.newaxis]
     if x_test.ndim  == 3: x_test  = x_test[..., np.newaxis]
 
     # Resize to image_size (keeps your ViT/CNN parity if you want 320)
+    # TODO: look at converting to tensors that can be used with MPS optimization
     x_train = tf.image.resize(tf.convert_to_tensor(x_train), (image_size, image_size)).numpy()
     x_test  = tf.image.resize(tf.convert_to_tensor(x_test ), (image_size, image_size)).numpy()
 
@@ -142,6 +171,7 @@ def load_subject_arrays(root, mode, subject, image_size):
 
     num_classes = int(max(y_train.max(), y_test.max()) + 1)
     return (x_train, y_train), (x_test, y_test), num_classes
+
 
 # ----------------------------
 # CNN model
