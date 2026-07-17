@@ -3,6 +3,8 @@
 import os
 import json
 import argparse
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -335,21 +337,26 @@ def main():
     
     # exit(0)
     
-    parser = argparse.ArgumentParser(description="Run ViT on Subject_1 ultrasound data with progress bars.")
+    default_subject_id = "2"
+    
+    parser = argparse.ArgumentParser(description=f"Run ViT on Subject_{default_subject_id} ultrasound data with progress bars.")
     # Paths / data
     parser.add_argument("--root", type=str,
         # default=r"C:\Users\bimbr\Documents\Mirror_Paper\Data_Upload",
         # default=r"/Users/rickgladwin/Code/u_of_hull/dissertation/bimbraw_2025_dataset/data/",
         default=config.default_dataset_path,
         help="Root folder containing 'mirror' and 'perp'.")
-    parser.add_argument("--mode", type=str, choices=["mirror", "perp"], default="mirror",
+    # parser.add_argument("--mode", type=str, choices=["mirror", "perp"], default="mirror",
+    parser.add_argument("--mode", type=str, choices=["mirror", "perp"], default="perp",
         help="Dataset mode: mirror or perp.")
-    parser.add_argument("--subject", type=str, default="Subject_1",
+    # parser.add_argument("--subject", type=str, default="Subject_1",
+    parser.add_argument("--subject", type=str, default=f"Subject_{default_subject_id}",
         help="Subject folder name.")
-    parser.add_argument("--image-size", type=int, default=640,
+    parser.add_argument("--image-size", type=int, default=320,
         help="Model input size (pixels).")
     # Training
-    parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs.")
+    # parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs.")
+    parser.add_argument("--epochs", type=int, default=1, help="Number of training epochs.")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
     parser.add_argument("--val-split", type=float, default=0.1, help="Validation split from training set.")
@@ -358,8 +365,10 @@ def main():
     # Save / load
     parser.add_argument("--load-model", type=str, default="", help="Path to an existing .keras model to load (skip training if provided).")
     parser.add_argument("--save-model", type=str, default="", help="Path to save trained model, e.g., results/vit_mirror_subject1.keras")
-    parser.add_argument("--out", type=str, default="", help="Path to save metrics JSON, e.g., results/subject1_vit.json")
-    parser.add_argument("--cm", type=str, default="", help="Path to save confusion matrix PNG, e.g., results/figs/subject1_vit_cm.png")
+    # parser.add_argument("--out", type=str, default="", help="Path to save metrics JSON, e.g., results/subject1_vit.json")
+    file_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
+    parser.add_argument("--out", type=str, default=f"results/subject_{default_subject_id}_vit_{file_datetime}.json", help="Path to save metrics JSON, e.g., results/subject1_vit.json")
+    parser.add_argument("--cm", type=str, default=f"results/figs/subject_{default_subject_id}_vit_cm_{file_datetime}.png", help="Path to save confusion matrix PNG, e.g., results/figs/subject1_vit_cm.png")
 
     args = parser.parse_args()
     set_seed(args.seed)

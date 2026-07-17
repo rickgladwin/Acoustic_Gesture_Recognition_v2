@@ -3,6 +3,8 @@
 import os
 import json
 import argparse
+from datetime import datetime
+
 import numpy as np
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
@@ -227,7 +229,13 @@ def build_cnn(input_shape, num_classes,
 # Main
 # ----------------------------
 def main():
-    ap = argparse.ArgumentParser(description="CNN gesture classifier (single subject) with progress bars + metrics.")
+    default_subject_id: str = "2"
+    default_epochs: int = 50
+    default_progress: str = "none" # ["tqdm", "none"]
+    
+    # TODO: introduce learning rate decay to reduce variability in the validation accuracy during training?
+    
+    ap = argparse.ArgumentParser(description=f"CNN gesture classifier (subject {default_subject_id}) with progress bars + metrics.")
     # Paths / data
     ap.add_argument("--root", type=str,
         # default=r"C:\Users\bimbr\Documents\Mirror_Paper\Data_Upload",
@@ -235,16 +243,17 @@ def main():
         help="Root folder containing 'mirror' and 'perp'.")
     ap.add_argument("--mode", type=str, choices=["mirror", "perp"], default="mirror",
         help="Dataset mode: mirror or perp.")
-    ap.add_argument("--subject", type=str, default="Subject_1",
+    ap.add_argument("--subject", type=str, default=f"Subject_{default_subject_id}",
         help="Subject folder name.")
     ap.add_argument("--image-size", type=int, default=320,
         help="Model input size (pixels).")
     # Training
-    ap.add_argument("--epochs", type=int, default=5, help="Number of training epochs.")
+    ap.add_argument("--epochs", type=int, default=default_epochs, help="Number of training epochs.")
     ap.add_argument("--batch-size", type=int, default=64, help="Batch size.")
     ap.add_argument("--seed", type=int, default=42, help="Random seed.")
     ap.add_argument("--val-split", type=float, default=0.1, help="Validation split from training set.")
-    ap.add_argument("--progress", type=str, choices=["tqdm", "none"], default="tqdm",
+    # ap.add_argument("--progress", type=str, choices=["tqdm", "none"], default="tqdm",
+    ap.add_argument("--progress", type=str, choices=["tqdm", "none"], default=default_progress,
         help="tqdm progress bars (tqdm) or Keras logs only (none).")
     # Model knobs (optional)
     ap.add_argument("--filters", type=int, nargs="+", default=[16,16,16,16,16], help="Conv filters per block.")
@@ -254,12 +263,13 @@ def main():
     # Save / load
     ap.add_argument("--load-model", type=str, default="", help="Path to an existing .keras model to load (skip training if provided).")
     ap.add_argument("--save-model", type=str, default="", help="Path to save trained model, e.g., results/cnn_mirror_subject1.keras")
-    ap.add_argument("--out", type=str, default="", help="Path to save metrics JSON, e.g., results/subject1_cnn.json")
-    ap.add_argument("--cm", type=str, default="", help="Path to save confusion matrix PNG, e.g., results/figs/subject1_cnn_cm.png")
+    file_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ap.add_argument("--out", type=str, default=f"results/subject_{default_subject_id}_cnn_{file_datetime}.json", help="Path to save metrics JSON, e.g., results/subject1_cnn.json")
+    ap.add_argument("--cm", type=str, default=f"results/figs/subject_{default_subject_id}_cnn_cm_{file_datetime}.png", help="Path to save confusion matrix PNG, e.g., results/figs/subject1_cnn_cm.png")
 
     args = ap.parse_args()
     set_seed(args.seed)
-
+ 
     # Load data
     print(f"-- Loading data from: {args.root}...")
 
@@ -333,6 +343,8 @@ def main():
     # Evaluate
     logits = model.predict(x_test, verbose=0)
     y_pred = np.argmax(logits, axis=1)
+    
+    # TODO: make sure x_test and y_test are subject to the same shuffling, if any
 
     acc = accuracy_score(y_test, y_pred)
     prec, rec, f1, _ = precision_recall_fscore_support(
