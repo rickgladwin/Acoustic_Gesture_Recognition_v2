@@ -279,8 +279,38 @@ def plot_history_together(training_history: History):
     plt.xlabel("Epochs")
     plt.show()
     
+
+def create_caption_from_details(details: dict) -> str:
+    key_val_separator: str = ": "
+    fill_char: str = '.'
+
+    caption: str = ""
+    max_detail_width: int = 0
+
+    # build caption text from details dictionary
+    for key, value in details.items():
+        detail_width: int = len(key) + len(key_val_separator) + len(str(value))
+        if detail_width > max_detail_width:
+            max_detail_width = detail_width
+        caption += f"{key}{key_val_separator}{value}\n"
+    # remove last separator
+    caption = caption.rstrip("\n")
+    # add padding to caption lines
+    for line in caption.split("\n"):
+        # option 1: pad right (left justify)
+        # caption = caption.replace(line, line.ljust(max_detail_width, fill_char))
+
+        # option 2: pad between key and value
+        key: str = line.split(key_val_separator)[0]
+        val: str = line.split(key_val_separator)[1]
+        fill_width: int = max_detail_width - len(line)
+        new_line: str = f"{key}{key_val_separator}{fill_char * fill_width}{val}"
+        caption = caption.replace(line, new_line) 
+    return caption
+
+    
 def plot_history_separately(training_history: History, loss_plot_title: str|None=None, acc_plot_title: str|None=None, details: dict|None=None):
-    # TODO: move this to its own function
+    # TODO: move font setter to its own function
     # set global matplotlib font 
     # set a cascade of font families in order of preference
     font_family_cascade = ['Inconsolata', 'Andale Mono']
@@ -302,31 +332,17 @@ def plot_history_separately(training_history: History, loss_plot_title: str|None
     
     # set the global matplotlib font
     plt.rcParams['font.family'] = selected_font
+    caption_font_size: int = 8
     
     # Create a figure with two subplots side-by-side
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
     
+    # create plot caption
     if details is not None:
-        caption: str = ""
-        max_detail_width: int = 0
-        # build caption text from details dictionary
-        for key, value in details.items():
-            detail_width: int = len(key) + len(": ") + len(str(value))
-            if detail_width > max_detail_width:
-                max_detail_width = detail_width
-            caption += f"{key}: {value}\n"
-        # remove last separator
-        caption = caption.rstrip("\n")
-        # print(f"detail max width: {max_detail_width} chars")
-        # add padding to caption lines
-        for line in caption.split("\n"):
-            # print(f"padding line: '{line}'")
-            caption = caption.replace(line, line.ljust(max_detail_width, ' '))
-            # print(f"\ncaption:\n{caption}\n\n")
+        caption = create_caption_from_details(details)
     else:
         caption = ""
-        
-    
+
     # Plot Training & Validation Loss
     loss_title: str = loss_plot_title if loss_plot_title is not None else 'Model Loss Over Epochs'
 
@@ -335,7 +351,7 @@ def plot_history_separately(training_history: History, loss_plot_title: str|None
         ax1.plot(training_history.history['val_loss'], label='Val Loss', color='orange', linestyle='-', linewidth=2)
     ax1.set_title(loss_title)
     # adding the caption to the X label is the simplest way to display it
-    ax1.set_xlabel(f'Epochs\n\n{caption}', fontdict={'size': 8, 'family': 'Inconsolata'})
+    ax1.set_xlabel(f'Epochs\n\n{caption}', fontdict={'size': caption_font_size})
     ax1.set_ylabel('Loss')
     ax1.legend()
     ax1.grid(True)
@@ -352,7 +368,7 @@ def plot_history_separately(training_history: History, loss_plot_title: str|None
         ax2.plot(training_history.history[val_acc_key], label='Val Accuracy', color='orange', linestyle='-', linewidth=2)
     ax2.set_title(acc_title)
     # ax2.set_xlabel(f'Epochs\n\n{caption}')
-    ax2.set_xlabel(f'Epochs')
+    ax2.set_xlabel(f'Epochs\n\n{caption}', fontdict={'size': caption_font_size})
     ax2.set_ylabel('Accuracy')
     ax2.legend()
     ax2.grid(True)

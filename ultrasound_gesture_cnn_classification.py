@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
 
 import config
-from ultrasound_gesture_vit_classification import plot_history_separately
+from ultrasound_gesture_vit_classification import plot_history_separately, create_caption_from_details
 
 
 # ----------------------------
@@ -33,16 +33,23 @@ def ensure_dir(path_or_file):
     if d:
         os.makedirs(d, exist_ok=True)
 
-def save_confusion_matrix_png(y_true, y_pred, path):
+def save_confusion_matrix_png(y_true, y_pred, path, details: dict|None=None):
     if not path:
         return
     ensure_dir(path)
     cm = confusion_matrix(y_true, y_pred)
+    
+    if details is not None:
+        caption = create_caption_from_details(details)
+    else:
+        caption = ""
+    caption_font_size = 10
+    
     fig, ax = plt.subplots()
     im = ax.imshow(cm, interpolation="nearest")
     ax.set_title("Confusion Matrix")
     fig.colorbar(im, ax=ax)
-    ax.set_xlabel("Predicted")
+    ax.set_xlabel(f"Predicted\n\n{caption}", fontdict={'size': caption_font_size})
     ax.set_ylabel("True")
     # set the class labels on the x and y axes explicitly
     ax.set_xticks(np.arange(len(np.unique(y_pred))))
@@ -233,17 +240,17 @@ def main():
     
     default_subject_id: str = "2"
     default_mode: str = "perp"
-    default_epochs: int = 1
+    default_epochs: int = 200
     default_batch_size: int = 64
     default_filters: list[int] = [16,16,16,16,16]
     default_dense_units: int = 64
     default_progress: str = "none" # ["tqdm", "none"]
-    default_learning_rate: float = 1e-4 # default 1e-3
+    default_learning_rate: float = 5e-5 # default 1e-3
     default_dropout_rate: float = 0.5
-    # default_save_model: str = f"results/models/cnn_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.keras"
-    default_save_model: str = ""
-    default_load_model: str = f"results/models/cnn_perp_subject_2_1_epochs_20260717_191619.keras"
-    # default_load_model: str = ""
+    default_save_model: str = f"results/models/cnn_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.keras"
+    # default_save_model: str = ""
+    # default_load_model: str = f"results/models/cnn_perp_subject_2_1_epochs_20260717_191619.keras"
+    default_load_model: str = ""
     
     # reducing learning rate from 1e-3 to 1e-4 resulted in a smoother validation accuracy curve during training
     
@@ -276,7 +283,7 @@ def main():
     ap.add_argument("--dropout", type=float, default=default_dropout_rate, help="Dropout rate.")
     ap.add_argument("--lr", type=float, default=default_learning_rate, help="Adam learning rate.")
     # Save / load
-    ap.add_argument("--load-model", type=str, default="", help="Path to an existing .keras model to load (skip training if provided).")
+    ap.add_argument("--load-model", type=str, default=default_load_model, help="Path to an existing .keras model to load (skip training if provided).")
     ap.add_argument("--save-model", type=str, default=default_save_model, help="Path to save trained model, e.g., results/cnn_mirror_subject1.keras")
     ap.add_argument("--out", type=str, default=f"results/subject_{default_subject_id}_cnn_{default_epochs}_epochs_{file_datetime}.json", help="Path to save metrics JSON, e.g., results/subject1_cnn.json")
     ap.add_argument("--cm", type=str, default=f"results/figs/subject_{default_subject_id}_cnn_cm_{default_epochs}_epochs_{file_datetime}.png", help="Path to save confusion matrix PNG, e.g., results/figs/subject1_cnn_cm.png")
@@ -333,6 +340,18 @@ def main():
     if args.progress == "tqdm":
         callbacks.append(TqdmProgress(enable=True))
 
+    # training_details is used to label result plots
+    training_details: dict = {
+        "mode": args.mode,
+        "subject": args.subject,
+        "image_dimensions": f"{args.image_size}x{args.image_size}",
+        "epochs": args.epochs,
+        "batch_size": args.batch_size,
+        "learning_rate": args.lr,
+        "dropout": args.dropout,
+        "val_split": args.val_split,
+    }
+    
     # Train
     if not trained:
         print(f"-- training model for '{args.mode}/{args.subject}'...")
@@ -351,17 +370,6 @@ def main():
     
         print(f"plotting training history...")
         
-        training_details: dict = {
-            "mode": args.mode,
-            "subject": args.subject,
-            "image_dimensions": f"{args.image_size}x{args.image_size}",
-            "epochs": args.epochs,
-            "batch_size": args.batch_size,
-            "learning_rate": args.lr,
-            "dropout": args.dropout,
-            "val_split": args.val_split,
-        }
-    
         plot_history_separately(training_history=history, details=training_details)
         # plot_history_together(history)
 
@@ -382,7 +390,7 @@ def main():
 
     # Save artifacts
     if args.cm:
-        save_confusion_matrix_png(y_test, y_pred, args.cm)
+        save_confusion_matrix_png(y_test, y_pred, args.cm, training_details)
         print(f"Saved confusion matrix to: {args.cm}")
 
     if args.save_model:
