@@ -13,6 +13,7 @@ from tensorflow import keras
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 # import torch
 
 # Progress bar (console "trackbar")
@@ -186,7 +187,7 @@ def mlp(x, hidden_units, dropout_rate):
 def build_vit(input_shape, num_classes,
               patch_size=32, projection_dim=64, num_heads=8,
               transformer_layers=6, transformer_units=(128, 64),
-              mlp_head_units=(512, 256)):
+              mlp_head_units=(512, 256), learning_rate: float=1e-3):
     """Build a compact ViT classifier (no CLS token; flatten + MLP head)."""
     h, w, _ = input_shape
     num_patches = (h // patch_size) * (w // patch_size)
@@ -222,7 +223,7 @@ def build_vit(input_shape, num_classes,
 
     model = keras.Model(inputs=inputs, outputs=logits)
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=1e-3),
+        optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
         loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
         metrics=[keras.metrics.SparseCategoricalAccuracy(name="accuracy")],
     )
@@ -278,33 +279,89 @@ def plot_history_together(training_history: History):
     plt.xlabel("Epochs")
     plt.show()
     
-def plot_history_separately(training_history: History):
+def plot_history_separately(training_history: History, loss_plot_title: str|None=None, acc_plot_title: str|None=None, details: dict|None=None):
+    # TODO: move this to its own function
+    # set global matplotlib font 
+    # set a cascade of font families in order of preference
+    font_family_cascade = ['Inconsolata', 'Andale Mono']
+    font_type_fallback = ['monospace']
+    
+    # check available fonts
+    font_names = sorted({f.name for f in fm.fontManager.ttflist})
+    print("fonts:")
+    # look for the preferred fonts in the found system fonts
+    preferred_font_found = False
+    selected_font = None
+    for preferred_font in font_family_cascade:
+        if preferred_font in font_names:
+            preferred_font_found = True
+            selected_font = preferred_font
+            break
+    if not preferred_font_found:
+        selected_font = font_type_fallback[0]
+    
+    # set the global matplotlib font
+    plt.rcParams['font.family'] = selected_font
+    
     # Create a figure with two subplots side-by-side
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
     
+    if details is not None:
+        caption: str = ""
+        max_detail_width: int = 0
+        # build caption text from details dictionary
+        for key, value in details.items():
+            detail_width: int = len(key) + len(": ") + len(str(value))
+            if detail_width > max_detail_width:
+                max_detail_width = detail_width
+            caption += f"{key}: {value}\n"
+        # remove last separator
+        caption = caption.rstrip("\n")
+        # print(f"detail max width: {max_detail_width} chars")
+        # add padding to caption lines
+        for line in caption.split("\n"):
+            # print(f"padding line: '{line}'")
+            caption = caption.replace(line, line.ljust(max_detail_width, ' '))
+            # print(f"\ncaption:\n{caption}\n\n")
+    else:
+        caption = ""
+        
+    
     # Plot Training & Validation Loss
+    loss_title: str = loss_plot_title if loss_plot_title is not None else 'Model Loss Over Epochs'
+
     ax1.plot(training_history.history['loss'], label='Train Loss', color='blue', linewidth=2)
     if 'val_loss' in training_history.history:
-        ax1.plot(training_history.history['val_loss'], label='Val Loss', color='orange', linestyle='--', linewidth=2)
-    ax1.set_title('Model Loss Over Epochs')
-    ax1.set_xlabel('Epochs')
+        ax1.plot(training_history.history['val_loss'], label='Val Loss', color='orange', linestyle='-', linewidth=2)
+    ax1.set_title(loss_title)
+    # adding the caption to the X label is the simplest way to display it
+    ax1.set_xlabel(f'Epochs\n\n{caption}', fontdict={'size': 8, 'family': 'Inconsolata'})
     ax1.set_ylabel('Loss')
     ax1.legend()
     ax1.grid(True)
     
     # Plot Training & Validation Accuracy
+    acc_title: str = acc_plot_title if acc_plot_title is not None else 'Model Accuracy Over Epochs'
+    
     # Note: Use 'acc' instead of 'accuracy' if you are using an older Keras version
     acc_key = 'accuracy' if 'accuracy' in training_history.history else 'acc'
     ax2.plot(training_history.history[acc_key], label='Train Accuracy', color='blue', linewidth=2)
     
     val_acc_key = 'val_' + acc_key
     if val_acc_key in training_history.history:
-        ax2.plot(training_history.history[val_acc_key], label='Val Accuracy', color='orange', linestyle='--', linewidth=2)
-    ax2.set_title('Model Accuracy Over Epochs')
-    ax2.set_xlabel('Epochs')
+        ax2.plot(training_history.history[val_acc_key], label='Val Accuracy', color='orange', linestyle='-', linewidth=2)
+    ax2.set_title(acc_title)
+    # ax2.set_xlabel(f'Epochs\n\n{caption}')
+    ax2.set_xlabel(f'Epochs')
     ax2.set_ylabel('Accuracy')
     ax2.legend()
     ax2.grid(True)
+    
+    # add caption with training run details
+    # NOTE: this method requires modifying the axis locations so that the axes are smaller than
+    # the figure size. Easier to add the caption to the X label, unless adding the caption inside the
+    # bounds of the axes, as an overlay on the plot itself.
+    # plt.figtext(x=0.1, y=0.75, s=caption, wrap=True, horizontalalignment='left', fontsize=10)
     
     plt.tight_layout()
     plt.show()
@@ -337,7 +394,32 @@ def main():
     
     # exit(0)
     
-    default_subject_id = "2"
+    # settings from the paper:
+    # Vision Transformers: The ViT model is trained with
+    # a learning rate of 0.0005 and a weight decay of 0.0001,
+    # using a batch size of 256, and for 200 epochs. The images
+    # were downsized to 320 × 320 pixels and divided into
+    # 32 ×32 patches, resulting in 100 patches per image. The
+    # model uses 16 attention heads across eight transformer layers,
+    # with each layer having projection dimensions of 64. The
+    # final classification layers consist of two dense layers with
+    # 2048 and 1024 units. Data augmentation techniques, including
+    # normalization, resizing, random horizontal flipping, rotation,
+    # and zooming, are applied before training.
+    
+    # TODO: get MPS working with ViT model. It's working for CNN and SVC.
+    
+    default_subject_id: str = "2"
+    default_epochs: int = 100
+    default_progress: str = "tqdm" # ["tqdm", "none"]
+    default_learning_rate: float = 0.0005
+    default_weight_decay: float = 0.0001
+    default_batch_size: int = 256
+    default_patch_size: int = 32
+    default_num_heads: int = 16
+    default_num_layers: int = 8
+    default_projection_dim: int = 64
+    default_dense_units: int = 2048
     
     parser = argparse.ArgumentParser(description=f"Run ViT on Subject_{default_subject_id} ultrasound data with progress bars.")
     # Paths / data
@@ -356,19 +438,21 @@ def main():
         help="Model input size (pixels).")
     # Training
     # parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs.")
-    parser.add_argument("--epochs", type=int, default=1, help="Number of training epochs.")
-    parser.add_argument("--batch-size", type=int, default=64, help="Batch size.")
+    parser.add_argument("--epochs", type=int, default=default_epochs, help="Number of training epochs.")
+    # parser.add_argument("--batch-size", type=int, default=64, help="Batch size.")
+    parser.add_argument("--batch-size", type=int, default=default_batch_size, help="Batch size.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
     parser.add_argument("--val-split", type=float, default=0.1, help="Validation split from training set.")
-    parser.add_argument("--progress", type=str, choices=["tqdm", "none"], default="tqdm",
+    parser.add_argument("--lr", type=float, default=default_learning_rate, help="Adam learning rate.")
+    parser.add_argument("--progress", type=str, choices=["tqdm", "none"], default=default_progress,
         help="Use tqdm progress bars (tqdm) or Keras logging only (none).")
     # Save / load
     parser.add_argument("--load-model", type=str, default="", help="Path to an existing .keras model to load (skip training if provided).")
     parser.add_argument("--save-model", type=str, default="", help="Path to save trained model, e.g., results/vit_mirror_subject1.keras")
     # parser.add_argument("--out", type=str, default="", help="Path to save metrics JSON, e.g., results/subject1_vit.json")
     file_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
-    parser.add_argument("--out", type=str, default=f"results/subject_{default_subject_id}_vit_{file_datetime}.json", help="Path to save metrics JSON, e.g., results/subject1_vit.json")
-    parser.add_argument("--cm", type=str, default=f"results/figs/subject_{default_subject_id}_vit_cm_{file_datetime}.png", help="Path to save confusion matrix PNG, e.g., results/figs/subject1_vit_cm.png")
+    parser.add_argument("--out", type=str, default=f"results/subject_{default_subject_id}_vit_{default_epochs}_epochs_{file_datetime}.json", help="Path to save metrics JSON, e.g., results/subject1_vit.json")
+    parser.add_argument("--cm", type=str, default=f"results/figs/vit/subject_{default_subject_id}_vit_cm_{default_epochs}_epochs_{file_datetime}.png", help="Path to save confusion matrix PNG, e.g., results/figs/subject1_vit_cm.png")
 
     args = parser.parse_args()
     set_seed(args.seed)
@@ -410,12 +494,13 @@ def main():
         model = build_vit(
             input_shape=input_shape,
             num_classes=num_classes,
-            patch_size=32,
-            projection_dim=64,
-            num_heads=8,
-            transformer_layers=6,
+            patch_size=default_patch_size, # was 32
+            projection_dim=default_projection_dim, # was 64
+            num_heads=default_num_heads, # was 8
+            transformer_layers=default_num_layers, # was 6
             transformer_units=(128, 64),
             mlp_head_units=(512, 256),
+            learning_rate=default_learning_rate,
         )
         trained = False
 
@@ -442,6 +527,7 @@ def main():
         
         print(f"plotting training history...")
 
+        # TODO: add title and run details to these functions as arguments
         plot_history_separately(history)
         # plot_history_together(history)
     
