@@ -16,10 +16,32 @@ import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 # import torch
 
+# ViT optimizations
+# see https://share.google/aimode/UwSqy8Wxk8WaXGWHX
+from tensorflow.keras import mixed_precision
+
+# Enable mixed float16 precision (mat default to float32 for all operations otherwise)
+# this changed the time per epoch from apx 1m14s to apx 43s
+# early estimate 1h18s down from 2h11m
+# ** check and see what the impact is on accuracy
+policy = mixed_precision.Policy('mixed_float16')
+mixed_precision.set_global_policy(policy)
+
 # Progress bar (console "trackbar")
 from tqdm.auto import tqdm
 
 import config
+
+# TODO: explore using an attention mask on a CNN
+# TODO: explore using a ViT to generate an attention mask (using explainability techniques like segmentation or
+#  post-training attention maps) and applying that to the CNN
+# TODO: explore how a time-dependent attention mask, or an attention mask that was a function of
+#  joint position, would work. Knowing the (theoretical/idealized) synergistic functions, how could we make a model
+#  that would tweak or generate these functions for the purposes of making an attention mask function? One issue with
+#  the synergistic function sets is that they're individualized. A ViT (etc.) might be able to modify or produce a
+#  synergistic function set that would apply to the individual and/or dataset at hand, allowing us to make best use of
+#  any given dataset, and/or help us build a transfer learning system or mapping for adapting to new subjects and/or
+#  new positioning of the ultrasound probes.
 
 
 # ============================
@@ -424,18 +446,33 @@ def main():
     # and zooming, are applied before training.
     
     # TODO: get MPS working with ViT model. It's working for CNN and SVC.
+    #  NOTE: it seems to be working but the CPU is lagging behind the GPU.
+    #  TODO: make the CPU process in parallel in order to keep ahead of the GPU.
+    
+    # TODO: ensure the train and test datasets are representative the way we want?
+    #  Keshav's team has pre-split the data into train and test, rather than dividing
+    #  them up at training time. Check and see what reasoning was used. Validation accuracy
+    #  gets up around 97% while test accuracy is around 84%. We expect a difference
+    #  in this direction, but one so large? Maybe overfitting on the training set? Or
+    #  is there a difference between the test and training sets? We are shuffling the
+    #  training set but not the test set. Maybe start there?
+    
     
     default_subject_id: str = "2"
     default_epochs: int = 100
+    default_image_size: int = 320 # was 320, raw image is 640
     default_progress: str = "tqdm" # ["tqdm", "none"]
     default_learning_rate: float = 0.0005
     default_weight_decay: float = 0.0001
-    default_batch_size: int = 256
-    default_patch_size: int = 32
+    default_batch_size: int = 256 # was 256 (larger batch sizes are required for ViTs in order to saturate the GPU)
+    default_patch_size: int = 32 # was 32, 320/16 = 20 (took several minutes and never finished the first iteration)
     default_num_heads: int = 16
     default_num_layers: int = 8
     default_projection_dim: int = 64
     default_dense_units: int = 2048
+    
+    # TODO: include global tensorflow precision setting in training details
+    # TODO: include model type in title for loss + acc plots
     
     parser = argparse.ArgumentParser(description=f"Run ViT on Subject_{default_subject_id} ultrasound data with progress bars.")
     # Paths / data
@@ -450,7 +487,7 @@ def main():
     # parser.add_argument("--subject", type=str, default="Subject_1",
     parser.add_argument("--subject", type=str, default=f"Subject_{default_subject_id}",
         help="Subject folder name.")
-    parser.add_argument("--image-size", type=int, default=320,
+    parser.add_argument("--image-size", type=int, default=default_image_size,
         help="Model input size (pixels).")
     # Training
     # parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs.")
@@ -501,7 +538,8 @@ def main():
         print(f"Loading model from: {args.load_model}")
         model = keras.models.load_model(args.load_model, compile=False)
         model.compile(
-            optimizer=keras.optimizers.Adam(learning_rate=1e-3),
+            # optimizer=keras.optimizers.Adam(learning_rate=1e-3),
+            optimizer=keras.optimizers.legacy.Adam(learning_rate=1e-3),
             loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
             metrics=[keras.metrics.SparseCategoricalAccuracy(name='accuracy')],
         )
@@ -543,8 +581,20 @@ def main():
         
         print(f"plotting training history...")
 
+        # training_details is used to label result plots
+        training_details: dict = {
+            "mode": args.mode,
+            "subject": args.subject,
+            "image_dimensions": f"{args.image_size}x{args.image_size}",
+            "epochs": args.epochs,
+            "batch_size": args.batch_size,
+            "learning_rate": args.lr,
+            # "dropout": args.dropout,
+            "val_split": args.val_split,
+        }
+
         # TODO: add title and run details to these functions as arguments
-        plot_history_separately(history)
+        plot_history_separately(history, details=training_details)
         # plot_history_together(history)
     
     # Evaluate on test
