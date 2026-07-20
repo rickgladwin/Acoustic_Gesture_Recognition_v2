@@ -238,7 +238,7 @@ def build_cnn(input_shape, num_classes,
 def main():
     file_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
     
-    default_subject_id: str = "2"
+    default_subject_id: str = "4"
     default_mode: str = "perp"
     default_epochs: int = 200
     default_batch_size: int = 64
