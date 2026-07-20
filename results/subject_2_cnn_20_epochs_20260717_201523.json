@@ -1,0 +1,30 @@
+{
+  "model": "cnn",
+  "mode": "perp",
+  "subject": "Subject_2",
+  "n_classes": 12,
+  "metrics": {
+    "accuracy": 0.6183333333333333,
+    "precision_macro": 0.6361058985234412,
+    "recall_macro": 0.6183333333333333,
+    "f1_macro": 0.5514439932108295
+  },
+  "confusion_matrix_path": "results/figs/subject_2_cnn_cm_20_epochs_20260717_201523.png",
+  "params": {
+    "image_size": 320,
+    "epochs": 20,
+    "batch_size": 64,
+    "seed": 42,
+    "val_split": 0.1,
+    "filters": [
+      16,
+      16,
+      16,
+      16,
+      16
+    ],
+    "dense": 64,
+    "dropout": 0.5,
+    "lr": 0.0001
+  }
+}
