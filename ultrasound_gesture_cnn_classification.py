@@ -13,6 +13,8 @@ from tensorflow import keras
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
 import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
+import subprocess
+import platform
 
 import config
 from ultrasound_gesture_vit_classification import plot_history_separately, create_caption_from_details
@@ -258,6 +260,49 @@ def training_duration_display(training_duration: timedelta, subsecond_precision:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}:{subseconds_int:02d}" # pad each time place with leading zeros
 
 
+def get_mac_system_info() -> dict:
+    system_details: dict[str, str] = {}
+
+    # Query the exact Mac processor name using sysctl
+    try:
+        cmd = ["sysctl", "-n", "machdep.cpu.brand_string"]
+        processor = subprocess.check_output(cmd).decode().strip()
+    except Exception:
+        processor = platform.processor()
+
+    system_details['processor_type'] = processor
+
+    logical_cpu_cores_count = subprocess.check_output(["sysctl", "-n", "hw.logicalcpu"]).decode().strip()
+
+    system_details['cpu_cores'] = logical_cpu_cores_count
+
+    # Queries the Mac I/O Registry for core-count allocations
+    gpu_cores_raw = subprocess.check_output("ioreg -l | grep gpu-core-count", shell=True).decode()
+    # Extracts the digit assignment from the property string
+    gpu_cores = [s for s in gpu_cores_raw.split() if s.isdigit()][0]
+
+    system_details['gpu_cores'] = gpu_cores
+
+    return system_details
+
+
+def is_apple_silicon():
+    # Direct check (Returns 'arm64' if running natively)
+    if platform.system() == "Darwin" and platform.machine() == "arm64":
+        return True
+
+    # Deep check (Catches Apple Silicon even when emulated via Rosetta)
+    if platform.system() == "Darwin":
+        try:
+            brand = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"]).decode().strip()
+            if "Apple" in brand:
+                return True
+        except Exception:
+            pass
+
+    return False
+
+
 # ----------------------------
 # Main
 # ----------------------------
@@ -266,7 +311,7 @@ def main():
     
     default_subject_id: str = "4"
     default_mode: str = "perp"
-    default_epochs: int = 20 # 200 to 0.9558 accuracy
+    default_epochs: int = 1 # 200 to 0.9558 accuracy
     default_batch_size: int = 64
     default_filters: list[int] = [16,16,16,16,16]
     default_dense_units: int = 64
@@ -420,7 +465,17 @@ def main():
     print(f"[{args.mode}/{args.subject}] Macro Precision: {prec:.4f}  Macro Recall: {rec:.4f}  Macro F1: {f1:.4f}")
     
     if not trained and history is not None:
-        training_details['test_accuracy'] = f"{acc:.4f}"
+
+        if is_apple_silicon():
+            # get Mac system info
+            mac_system_info: dict[str, str] = get_mac_system_info()
+
+            training_details['processor_type'] = mac_system_info["processor_type"]
+            training_details['cpu_cores'] = mac_system_info["cpu_cores"]
+            training_details['gpu_cores'] = mac_system_info["gpu_cores"]
+
+            training_details['test_accuracy'] = f"{acc:.4f}"
+
         print(f"plotting training history...")
 
         loss_title: str = "CNN Model Loss Over Epochs"
@@ -431,7 +486,6 @@ def main():
         plot_history_separately(training_history=history, loss_plot_title=loss_title, acc_plot_title=accuracy_title, details=training_details, save_plots=True, plot_filename=history_plot_filename)
         # plot_history_together(history)
         print(f"Saved training history plots to: {history_plot_filename}")
-        
 
     # Save artifacts
     if args.cm:
