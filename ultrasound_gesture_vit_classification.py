@@ -330,8 +330,64 @@ def create_caption_from_details(details: dict) -> str:
         caption = caption.replace(line, new_line) 
     return caption
 
+
+def set_global_matplotlib_font(font_family_cascade: list[str]|None=None, default_font_type: list[str]|None=None):
+    # TODO: finish font setting method
+    # all fonts in font_family_cascade must be system fonts detectable by matplotlib using fm.fontManager.ttflist
+    # font_type is one of ['serif', 'sans-serif', 'cursive', 'fantasy', 'monospace']
+    if font_family_cascade is None:
+        font_family_cascade = ['Inconsolata', 'Andale Mono']
+    if default_font_type is None:
+        font_type_fallback = ['sans-serif']
+
+    # set global matplotlib font 
+    # set a cascade of font families in order of preference
+    font_family_cascade = ['Inconsolata', 'Andale Mono']
+    font_type_fallback = ['monospace']
+
+    # check available fonts
+    font_names = sorted({f.name for f in fm.fontManager.ttflist})
+    print("fonts:")
+    # look for the preferred fonts in the found system fonts
+    preferred_font_found = False
+    selected_font = None
+    for preferred_font in font_family_cascade:
+        if preferred_font in font_names:
+            preferred_font_found = True
+            selected_font = preferred_font
+            break
+    if not preferred_font_found:
+        selected_font = font_type_fallback[0]
+
+    # set the global matplotlib font
+    plt.rcParams['font.family'] = selected_font 
+
     
-def plot_history_separately(training_history: History, loss_plot_title: str|None=None, acc_plot_title: str|None=None, details: dict|None=None):
+def plot_history_separately(training_history: History, loss_plot_title: str|None=None, acc_plot_title: str|None=None, details: dict|None=None, save_plots: bool=False, plot_filename: str|None=None):
+    """
+    Creates side-by-side subplots to display the loss and accuracy history over
+    epochs for both training and validation datasets. Training details and plot titles can be added.
+    Plots can be saved or displayed, depending on the value of `save_plots`.
+
+    Args:
+        training_history (History): The training history object obtained from model training.
+        loss_plot_title (str | None): Optional custom title for the loss plot. Defaults to 
+            'Model Loss Over Epochs' if None.
+        acc_plot_title (str | None): Optional custom title for the accuracy plot. Defaults
+            to 'Model Accuracy Over Epochs' if None.
+        details (dict | None): Optional dictionary containing additional details about the
+            training run to be added as a caption to the plots.
+        save_plots (bool): If True, saves the generated plots to a file. If False, displays the plots.
+        plot_filename (str | None): Filename for saving the plots. If None and save_plots 
+            is True, a default filename is used. Ignored if save_plots is False.
+
+    Raises:
+        KeyError: Raised if expected keys like 'loss', 'val_loss', 'accuracy', or 'val_accuracy'
+            are missing from the training history.
+
+    Returns:
+        None: This function does not return any value and either shows or saves the plots.
+    """
     # TODO: move font setter to its own function
     # set global matplotlib font 
     # set a cascade of font families in order of preference
@@ -402,7 +458,14 @@ def plot_history_separately(training_history: History, loss_plot_title: str|None
     # plt.figtext(x=0.1, y=0.75, s=caption, wrap=True, horizontalalignment='left', fontsize=10)
     
     plt.tight_layout()
-    plt.show()
+    
+    if save_plots:
+        if plot_filename is None:
+            plot_filename = f"?_?_epochs_?_lr_?"
+        plt.savefig(plot_filename, dpi=150)
+        plt.close(fig)
+    else:
+        plt.show()
 
 
 # ============================
@@ -447,7 +510,7 @@ def main():
     
     # TODO: get MPS working with ViT model. It's working for CNN and SVC.
     #  NOTE: it seems to be working but the CPU is lagging behind the GPU.
-    #  TODO: make the CPU process in parallel in order to keep ahead of the GPU.
+    #  TODO: make the CPU process run in parallel in order to keep ahead of the GPU.
     
     # TODO: ensure the train and test datasets are representative the way we want?
     #  Keshav's team has pre-split the data into train and test, rather than dividing

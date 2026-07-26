@@ -3,10 +3,11 @@
 import os
 import json
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import tensorflow as tf
+from keras.src.callbacks import History
 from sklearn.model_selection import train_test_split
 from tensorflow import keras
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
@@ -232,6 +233,31 @@ def build_cnn(input_shape, num_classes,
     )
     return model
 
+
+def training_duration_display(training_duration: timedelta, subsecond_precision: int=3) -> str:
+    """
+    Format a python timedelta as a string with the format HH:MM:SS:ffffff where ffffff is subseconds
+    shown to <subsecond_precision> decimal places.
+    Modified code based on Claude Code (2026)
+    """
+    
+    # guard subsecond_precision out of range
+    if subsecond_precision < 0 or subsecond_precision > 6:
+        raise ValueError("subsecond_precision must be between 0 and 6")
+    
+    total_seconds = int(training_duration.total_seconds())
+    days, remainder = divmod(total_seconds, 86400)
+    hours: int = days * 24 + remainder // 3600  # hours can exceed 23 for long durations
+    minutes: int = (remainder % 3600) // 60
+    seconds: int = remainder % 60
+    microseconds: int = training_duration.microseconds
+    print(f"microseconds: {microseconds}")
+    subseconds: float = microseconds / (10 ** (6 - subsecond_precision)) # e.g. microseconds to milliseconds if subsecond_precision is 3
+    subseconds_int: int = int(round(subseconds, 0)) # round subseconds to <subsecond_precision> decimal places
+
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}:{subseconds_int:02d}" # pad each time place with leading zeros
+
+
 # ----------------------------
 # Main
 # ----------------------------
@@ -240,17 +266,20 @@ def main():
     
     default_subject_id: str = "4"
     default_mode: str = "perp"
-    default_epochs: int = 200
+    default_epochs: int = 20 # 200 to 0.9558 accuracy
     default_batch_size: int = 64
     default_filters: list[int] = [16,16,16,16,16]
     default_dense_units: int = 64
     default_progress: str = "none" # ["tqdm", "none"]
     default_learning_rate: float = 5e-5 # default 1e-3
     default_dropout_rate: float = 0.5
-    default_save_model: str = f"results/models/cnn_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.keras"
-    # default_save_model: str = ""
+    # empty string for save or load model will skip save or load
+    # default_save_model: str = f"results/models/cnn_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.keras"
+    default_save_model: str = ""
     # default_load_model: str = f"results/models/cnn_perp_subject_2_1_epochs_20260717_191619.keras"
     default_load_model: str = ""
+    default_metrics_filepath: str = f"results/metrics/cnn/metrics_subject_{default_subject_id}_cnn_{default_epochs}_epochs_{file_datetime}.json"
+    default_confusion_matrix_filepath: str = f"results/figs/cnn/cm_subject_{default_subject_id}_cnn_cm_{default_epochs}_epochs_{file_datetime}.png"
     
     # reducing learning rate from 1e-3 to 1e-4 resulted in a smoother validation accuracy curve during training
     
@@ -285,8 +314,8 @@ def main():
     # Save / load
     ap.add_argument("--load-model", type=str, default=default_load_model, help="Path to an existing .keras model to load (skip training if provided).")
     ap.add_argument("--save-model", type=str, default=default_save_model, help="Path to save trained model, e.g., results/cnn_mirror_subject1.keras")
-    ap.add_argument("--out", type=str, default=f"results/subject_{default_subject_id}_cnn_{default_epochs}_epochs_{file_datetime}.json", help="Path to save metrics JSON, e.g., results/subject1_cnn.json")
-    ap.add_argument("--cm", type=str, default=f"results/figs/subject_{default_subject_id}_cnn_cm_{default_epochs}_epochs_{file_datetime}.png", help="Path to save confusion matrix PNG, e.g., results/figs/subject1_cnn_cm.png")
+    ap.add_argument("--out", type=str, default=default_metrics_filepath, help="Path to save metrics JSON, e.g., results/subject1_cnn.json")
+    ap.add_argument("--cm", type=str, default=default_confusion_matrix_filepath, help="Path to save confusion matrix PNG, e.g., results/figs/subject1_cnn_cm.png")
 
     args = ap.parse_args()
     set_seed(args.seed)
@@ -353,8 +382,11 @@ def main():
     }
     
     # Train
+    history: History|None = None
     if not trained:
         print(f"-- training model for '{args.mode}/{args.subject}'...")
+        train_start_datetime = datetime.now()
+
         history = model.fit(
             # x_train, y_train,
             x_train_fit, y_train_fit,
@@ -365,13 +397,12 @@ def main():
             callbacks=callbacks,
             verbose=verbose
         )
+        train_end_datetime = datetime.now()
+        training_duration = training_duration_display(train_end_datetime - train_start_datetime)
+        training_details['training_duration'] = training_duration
 
         print(f"-- training complete.")
-    
-        print(f"plotting training history...")
-        
-        plot_history_separately(training_history=history, details=training_details)
-        # plot_history_together(history)
+        print(f"-- training duration: {training_duration}")
 
     # Evaluate
     logits = model.predict(x_test, verbose=0)
@@ -387,6 +418,20 @@ def main():
     print(f"\n[{args.mode}/{args.subject}]   Test Accuracy: {acc:.4f}")
     print(f"[{args.mode}/{args.subject}] Random Accuracy: {1/num_classes:.4f}")
     print(f"[{args.mode}/{args.subject}] Macro Precision: {prec:.4f}  Macro Recall: {rec:.4f}  Macro F1: {f1:.4f}")
+    
+    if not trained and history is not None:
+        training_details['test_accuracy'] = f"{acc:.4f}"
+        print(f"plotting training history...")
+
+        loss_title: str = "CNN Model Loss Over Epochs"
+        accuracy_title: str = "CNN Model Accuracy Over Epochs"
+
+        history_plot_filename: str = f"results/figs/cnn/history_cnn_{args.epochs}_epochs_{args.lr}_lr_{file_datetime}"
+
+        plot_history_separately(training_history=history, loss_plot_title=loss_title, acc_plot_title=accuracy_title, details=training_details, save_plots=True, plot_filename=history_plot_filename)
+        # plot_history_together(history)
+        print(f"Saved training history plots to: {history_plot_filename}")
+        
 
     # Save artifacts
     if args.cm:
@@ -428,3 +473,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# ---- References ----
+#
+# Claude Code running qwen3.6 (2026) "Format a python timedelta as a string" [LLM chat]. 2026–07–26 
