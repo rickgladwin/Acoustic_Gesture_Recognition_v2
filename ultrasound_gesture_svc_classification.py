@@ -10,6 +10,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
 import joblib
+import skmetal
+
 
 import config
 
@@ -78,6 +80,7 @@ def load_subject_arrays(root, mode, subject):
 # ----------------------------
 # Main
 # ----------------------------
+
 def main():
     ap = argparse.ArgumentParser(description="SVM gesture classifier (single subject) with metrics + artifacts.")
     # Paths / data

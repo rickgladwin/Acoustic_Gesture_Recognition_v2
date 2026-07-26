@@ -3,8 +3,11 @@
 import os
 import json
 import argparse
+from datetime import datetime, timedelta
+
 import numpy as np
 import tensorflow as tf
+from keras.src.callbacks import History
 from sklearn.model_selection import train_test_split
 from tensorflow import keras
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
@@ -12,7 +15,7 @@ import matplotlib.pyplot as plt
 from tqdm.auto import tqdm
 
 import config
-from ultrasound_gesture_vit_classification import plot_history_separately
+from ultrasound_gesture_vit_classification import plot_history_separately, create_caption_from_details
 
 
 # ----------------------------
@@ -31,16 +34,23 @@ def ensure_dir(path_or_file):
     if d:
         os.makedirs(d, exist_ok=True)
 
-def save_confusion_matrix_png(y_true, y_pred, path):
+def save_confusion_matrix_png(y_true, y_pred, path, details: dict|None=None):
     if not path:
         return
     ensure_dir(path)
     cm = confusion_matrix(y_true, y_pred)
+    
+    if details is not None:
+        caption = create_caption_from_details(details)
+    else:
+        caption = ""
+    caption_font_size = 10
+    
     fig, ax = plt.subplots()
     im = ax.imshow(cm, interpolation="nearest")
     ax.set_title("Confusion Matrix")
     fig.colorbar(im, ax=ax)
-    ax.set_xlabel("Predicted")
+    ax.set_xlabel(f"Predicted\n\n{caption}", fontdict={'size': caption_font_size})
     ax.set_ylabel("True")
     # set the class labels on the x and y axes explicitly
     ax.set_xticks(np.arange(len(np.unique(y_pred))))
@@ -223,43 +233,93 @@ def build_cnn(input_shape, num_classes,
     )
     return model
 
+
+def training_duration_display(training_duration: timedelta, subsecond_precision: int=3) -> str:
+    """
+    Format a python timedelta as a string with the format HH:MM:SS:ffffff where ffffff is subseconds
+    shown to <subsecond_precision> decimal places.
+    Modified code based on Claude Code (2026)
+    """
+    
+    # guard subsecond_precision out of range
+    if subsecond_precision < 0 or subsecond_precision > 6:
+        raise ValueError("subsecond_precision must be between 0 and 6")
+    
+    total_seconds = int(training_duration.total_seconds())
+    days, remainder = divmod(total_seconds, 86400)
+    hours: int = days * 24 + remainder // 3600  # hours can exceed 23 for long durations
+    minutes: int = (remainder % 3600) // 60
+    seconds: int = remainder % 60
+    microseconds: int = training_duration.microseconds
+    print(f"microseconds: {microseconds}")
+    subseconds: float = microseconds / (10 ** (6 - subsecond_precision)) # e.g. microseconds to milliseconds if subsecond_precision is 3
+    subseconds_int: int = int(round(subseconds, 0)) # round subseconds to <subsecond_precision> decimal places
+
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}:{subseconds_int:02d}" # pad each time place with leading zeros
+
+
 # ----------------------------
 # Main
 # ----------------------------
 def main():
-    ap = argparse.ArgumentParser(description="CNN gesture classifier (single subject) with progress bars + metrics.")
+    file_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    default_subject_id: str = "4"
+    default_mode: str = "perp"
+    default_epochs: int = 20 # 200 to 0.9558 accuracy
+    default_batch_size: int = 64
+    default_filters: list[int] = [16,16,16,16,16]
+    default_dense_units: int = 64
+    default_progress: str = "none" # ["tqdm", "none"]
+    default_learning_rate: float = 5e-5 # default 1e-3
+    default_dropout_rate: float = 0.5
+    # empty string for save or load model will skip save or load
+    # default_save_model: str = f"results/models/cnn_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.keras"
+    default_save_model: str = ""
+    # default_load_model: str = f"results/models/cnn_perp_subject_2_1_epochs_20260717_191619.keras"
+    default_load_model: str = ""
+    default_metrics_filepath: str = f"results/metrics/cnn/metrics_subject_{default_subject_id}_cnn_{default_epochs}_epochs_{file_datetime}.json"
+    default_confusion_matrix_filepath: str = f"results/figs/cnn/cm_subject_{default_subject_id}_cnn_cm_{default_epochs}_epochs_{file_datetime}.png"
+    
+    # reducing learning rate from 1e-3 to 1e-4 resulted in a smoother validation accuracy curve during training
+    
+    # TODO: introduce learning rate decay to reduce variability in the validation accuracy during training?
+    # TODO: add test run details to confusion matrix image via arguments
+    
+    ap = argparse.ArgumentParser(description=f"CNN gesture classifier (subject {default_subject_id}) with progress bars + metrics.")
     # Paths / data
     ap.add_argument("--root", type=str,
         # default=r"C:\Users\bimbr\Documents\Mirror_Paper\Data_Upload",
         default=config.default_dataset_path,
         help="Root folder containing 'mirror' and 'perp'.")
-    ap.add_argument("--mode", type=str, choices=["mirror", "perp"], default="mirror",
+    ap.add_argument("--mode", type=str, choices=["mirror", "perp"], default=default_mode,
         help="Dataset mode: mirror or perp.")
-    ap.add_argument("--subject", type=str, default="Subject_1",
+    ap.add_argument("--subject", type=str, default=f"Subject_{default_subject_id}",
         help="Subject folder name.")
     ap.add_argument("--image-size", type=int, default=320,
         help="Model input size (pixels).")
     # Training
-    ap.add_argument("--epochs", type=int, default=5, help="Number of training epochs.")
-    ap.add_argument("--batch-size", type=int, default=64, help="Batch size.")
+    ap.add_argument("--epochs", type=int, default=default_epochs, help="Number of training epochs.")
+    ap.add_argument("--batch-size", type=int, default=default_batch_size, help="Batch size.")
     ap.add_argument("--seed", type=int, default=42, help="Random seed.")
     ap.add_argument("--val-split", type=float, default=0.1, help="Validation split from training set.")
-    ap.add_argument("--progress", type=str, choices=["tqdm", "none"], default="tqdm",
+    # ap.add_argument("--progress", type=str, choices=["tqdm", "none"], default="tqdm",
+    ap.add_argument("--progress", type=str, choices=["tqdm", "none"], default=default_progress,
         help="tqdm progress bars (tqdm) or Keras logs only (none).")
     # Model knobs (optional)
-    ap.add_argument("--filters", type=int, nargs="+", default=[16,16,16,16,16], help="Conv filters per block.")
-    ap.add_argument("--dense", type=int, default=64, help="Units in the penultimate dense layer.")
-    ap.add_argument("--dropout", type=float, default=0.5, help="Dropout rate.")
-    ap.add_argument("--lr", type=float, default=1e-3, help="Adam learning rate.")
+    ap.add_argument("--filters", type=int, nargs="+", default=default_filters, help="Conv filters per block.")
+    ap.add_argument("--dense", type=int, default=default_dense_units, help="Units in the penultimate dense layer.")
+    ap.add_argument("--dropout", type=float, default=default_dropout_rate, help="Dropout rate.")
+    ap.add_argument("--lr", type=float, default=default_learning_rate, help="Adam learning rate.")
     # Save / load
-    ap.add_argument("--load-model", type=str, default="", help="Path to an existing .keras model to load (skip training if provided).")
-    ap.add_argument("--save-model", type=str, default="", help="Path to save trained model, e.g., results/cnn_mirror_subject1.keras")
-    ap.add_argument("--out", type=str, default="", help="Path to save metrics JSON, e.g., results/subject1_cnn.json")
-    ap.add_argument("--cm", type=str, default="", help="Path to save confusion matrix PNG, e.g., results/figs/subject1_cnn_cm.png")
+    ap.add_argument("--load-model", type=str, default=default_load_model, help="Path to an existing .keras model to load (skip training if provided).")
+    ap.add_argument("--save-model", type=str, default=default_save_model, help="Path to save trained model, e.g., results/cnn_mirror_subject1.keras")
+    ap.add_argument("--out", type=str, default=default_metrics_filepath, help="Path to save metrics JSON, e.g., results/subject1_cnn.json")
+    ap.add_argument("--cm", type=str, default=default_confusion_matrix_filepath, help="Path to save confusion matrix PNG, e.g., results/figs/subject1_cnn_cm.png")
 
     args = ap.parse_args()
     set_seed(args.seed)
-
+ 
     # Load data
     print(f"-- Loading data from: {args.root}...")
 
@@ -309,9 +369,24 @@ def main():
     if args.progress == "tqdm":
         callbacks.append(TqdmProgress(enable=True))
 
+    # training_details is used to label result plots
+    training_details: dict = {
+        "mode": args.mode,
+        "subject": args.subject,
+        "image_dimensions": f"{args.image_size}x{args.image_size}",
+        "epochs": args.epochs,
+        "batch_size": args.batch_size,
+        "learning_rate": args.lr,
+        "dropout": args.dropout,
+        "val_split": args.val_split,
+    }
+    
     # Train
+    history: History|None = None
     if not trained:
         print(f"-- training model for '{args.mode}/{args.subject}'...")
+        train_start_datetime = datetime.now()
+
         history = model.fit(
             # x_train, y_train,
             x_train_fit, y_train_fit,
@@ -322,17 +397,18 @@ def main():
             callbacks=callbacks,
             verbose=verbose
         )
+        train_end_datetime = datetime.now()
+        training_duration = training_duration_display(train_end_datetime - train_start_datetime)
+        training_details['training_duration'] = training_duration
 
         print(f"-- training complete.")
-    
-        print(f"plotting training history...")
-    
-        plot_history_separately(history)
-        # plot_history_together(history)
+        print(f"-- training duration: {training_duration}")
 
     # Evaluate
     logits = model.predict(x_test, verbose=0)
     y_pred = np.argmax(logits, axis=1)
+    
+    # TODO: make sure x_test and y_test are subject to the same shuffling, if any
 
     acc = accuracy_score(y_test, y_pred)
     prec, rec, f1, _ = precision_recall_fscore_support(
@@ -342,10 +418,24 @@ def main():
     print(f"\n[{args.mode}/{args.subject}]   Test Accuracy: {acc:.4f}")
     print(f"[{args.mode}/{args.subject}] Random Accuracy: {1/num_classes:.4f}")
     print(f"[{args.mode}/{args.subject}] Macro Precision: {prec:.4f}  Macro Recall: {rec:.4f}  Macro F1: {f1:.4f}")
+    
+    if not trained and history is not None:
+        training_details['test_accuracy'] = f"{acc:.4f}"
+        print(f"plotting training history...")
+
+        loss_title: str = "CNN Model Loss Over Epochs"
+        accuracy_title: str = "CNN Model Accuracy Over Epochs"
+
+        history_plot_filename: str = f"results/figs/cnn/history_cnn_{args.epochs}_epochs_{args.lr}_lr_{file_datetime}"
+
+        plot_history_separately(training_history=history, loss_plot_title=loss_title, acc_plot_title=accuracy_title, details=training_details, save_plots=True, plot_filename=history_plot_filename)
+        # plot_history_together(history)
+        print(f"Saved training history plots to: {history_plot_filename}")
+        
 
     # Save artifacts
     if args.cm:
-        save_confusion_matrix_png(y_test, y_pred, args.cm)
+        save_confusion_matrix_png(y_test, y_pred, args.cm, training_details)
         print(f"Saved confusion matrix to: {args.cm}")
 
     if args.save_model:
@@ -383,3 +473,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# ---- References ----
+#
+# Claude Code running qwen3.6 (2026) "Format a python timedelta as a string" [LLM chat]. 2026–07–26 
