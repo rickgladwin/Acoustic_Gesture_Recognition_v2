@@ -83,6 +83,26 @@ def load_subject_arrays(root, mode, subject):
 
 @skmetal.accelerate
 def pipeline_from_steps(steps_list: list[tuple]):
+    # returns a scikit-learn Pipeline object from a list of tuples,
+    # where each tuple has ("step_name", <sklearn model or algorithm>)
+    # wrapper activates skmetal acceleration for sklearn
+    # example speeds (bottleneck may be due to training set size, or
+    # the package may not be working, or may not help with the kind of
+    # operations carried out by SVC), 1000 training samples:
+    # -- with skmetal:
+    # training: 0:01:08.750565
+    # testing:  0:00:57.744026
+    # -- without skmetal:
+    # training: 0:01:00.973862
+    # testing:  0:00:59.614771
+    # example speeds, 2000 training samples:
+    # -- with skmetal:
+    # training: 0:03:25.432516
+    # testing:  0:02:04.517311
+    # -- without skmetal:
+    # training: 0:04:13.336055
+    # testing:  0:01:50.181202
+
     return Pipeline(steps_list)
 
 
@@ -95,7 +115,7 @@ def main():
     # NOTE: rbf can consume more RAM than linear. In case of exit code 137 (Out Of Memory error),
     # reduce the number of training samples and/or switch to a linear kernel.
     default_kernel: str = "linear" # one of ["linear", "rbf"]
-    default_training_set_size: int = 1000 # -1 for unrestricted
+    default_training_set_size: int = 2000 # -1 for unrestricted, 4800 in the actual set
 
     ap = argparse.ArgumentParser(description="SVM gesture classifier (single subject) with metrics + artifacts.")
     # Paths / data
@@ -190,8 +210,13 @@ def main():
         trained = False
 
     # Predict & Metrics
-    print(f"\n[{args.mode}/{args.subject}] Predicting and calculating metrics...")
+    print(f"\n[{args.mode}/{args.subject}] Predicting and calculating metrics on {len(x_test)} test samples...")
+    test_start = datetime.now()
     y_pred = clf.predict(x_test)
+    test_end = datetime.now()
+    test_duration = test_end - test_start
+    print("Testing finished.")
+    print(f"testing duration: {test_duration}")
     acc = accuracy_score(y_test, y_pred)
     prec, rec, f1, _ = precision_recall_fscore_support(
         y_test, y_pred, average="macro", zero_division=0
