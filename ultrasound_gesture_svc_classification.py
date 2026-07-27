@@ -3,8 +3,11 @@
 import os
 import json
 import argparse
+from datetime import datetime
+
 import numpy as np
 import matplotlib.pyplot as plt
+from fontTools.ttLib.tables import TupleVariation
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
@@ -77,11 +80,23 @@ def load_subject_arrays(root, mode, subject):
     num_classes = int(max(y_train.max(), y_test.max()) + 1)
     return (x_train, y_train), (x_test, y_test), num_classes
 
+
+@skmetal.accelerate
+def pipeline_from_steps(steps_list: list[tuple]):
+    return Pipeline(steps_list)
+
+
 # ----------------------------
 # Main
 # ----------------------------
-
 def main():
+
+    default_max_iterations: int = 2000 # 2000
+    # NOTE: rbf can consume more RAM than linear. In case of exit code 137 (Out Of Memory error),
+    # reduce the number of training samples and/or switch to a linear kernel.
+    default_kernel: str = "linear" # one of ["linear", "rbf"]
+    default_training_set_size: int = 1000 # -1 for unrestricted
+
     ap = argparse.ArgumentParser(description="SVM gesture classifier (single subject) with metrics + artifacts.")
     # Paths / data
     ap.add_argument("--root", type=str,
@@ -94,12 +109,13 @@ def main():
         help="Subject folder name.")
 
     # Kernels allowed by the paper
-    ap.add_argument("--kernel", type=str, choices=["linear", "rbf"], default="rbf",
+    ap.add_argument("--kernel", type=str, choices=["linear", "rbf"], default=default_kernel,
         help="SVM kernel (paper uses only 'linear' and 'rbf').")
     ap.add_argument("--C", type=float, default=10.0, help="Regularization C.")
     ap.add_argument("--gamma", type=str, default="scale",
         help="Gamma for rbf ('scale','auto', or float). Ignored for linear.")
-    ap.add_argument("--max-iter", type=int, default=2000, help="Max iterations (-1 for no limit).")
+    # ap.add_argument("--max-iter", type=int, default=2000, help="Max iterations (-1 for no limit).")
+    ap.add_argument("--max-iter", type=int, default=default_max_iterations, help="Max iterations (-1 for no limit).")
     ap.add_argument("--class-weight", type=str, default="",
         help="'' for None, or 'balanced' to rebalance by class frequency.")
     ap.add_argument("--no-scale", action="store_true", help="Disable StandardScaler (not recommended).")
@@ -119,7 +135,14 @@ def main():
         args.root, args.mode, args.subject
     )
     print(f"-- loaded {len(x_train)} training samples and {len(x_test)} test samples for {num_classes} classes")
-    
+
+    # Reduce dataset size (uses less RAM)
+    if default_training_set_size != -1:
+        x_train = x_train[:default_training_set_size]
+        y_train = y_train[:default_training_set_size]
+
+        print(f"-- truncated training set to first {default_training_set_size} samples")
+
     # input_shape = (args.image_size, args.image_size, 1)
     # print(f"-- input shape: {input_shape}")
 
@@ -141,6 +164,7 @@ def main():
                 # keep 'scale' or 'auto'
                 pass
 
+        # configure a Support Vector Classifier instance
         svc = SVC(
             kernel=args.kernel,
             C=args.C,
@@ -153,11 +177,16 @@ def main():
         if not args.no_scale:
             steps.append(("scaler", StandardScaler(with_mean=True, with_std=True)))
         steps.append(("svc", svc))
-        clf = Pipeline(steps)
+        # clf = Pipeline(steps)
+        clf = pipeline_from_steps(steps)
 
         print(f"Started SVM training (kernel={args.kernel})…")
+        training_start = datetime.now()
         clf.fit(x_train, y_train)
+        training_end = datetime.now()
+        training_duration = training_end - training_start
         print("Training finished.")
+        print(f"training duration: {training_duration}")
         trained = False
 
     # Predict & Metrics
