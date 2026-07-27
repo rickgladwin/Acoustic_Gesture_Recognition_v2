@@ -47,64 +47,7 @@ import config
 #  any given dataset, and/or help us build a transfer learning system or mapping for adapting to new subjects and/or
 #  new positioning of the ultrasound probes.
 
-
-# ============================
-# Helpers
-# ============================
-# def set_seed(seed: int):
-#     """Make runs reproducible across numpy and TF."""
-#     import random
-#     random.seed(seed)
-#     np.random.seed(seed)
-#     tf.random.set_seed(seed)
-# 
-
-# def ensure_dir(p):
-#     """Create parent directory for a file path if it does not exist."""
-#     if p:
-#         os.makedirs(os.path.dirname(p), exist_ok=True)
-# 
-
-# def save_confusion_matrix_png(y_true, y_pred, path, cm_title: str|None=None, details: dict|None=None):
-#     """Save a simple confusion matrix figure and the related training details to PNG."""
-#     if not path:
-#         return
-#     ensure_dir(path)
-#     cm = confusion_matrix(y_true, y_pred)
-# 
-#     if details is not None:
-#         caption = create_caption_from_details(details)
-#     else:
-#         caption = ""
-#     caption_font_size = 10
-# 
-#     fig, ax = plt.subplots()
-#     im = ax.imshow(cm, interpolation="nearest")
-#     if cm_title is not None:
-#         ax.set_title(cm_title)
-#     else:
-#         ax.set_title("Confusion Matrix")
-#     fig.colorbar(im, ax=ax)
-#     ax.set_xlabel(f"Predicted\n\n{caption}", fontdict={'size': caption_font_size})
-#     ax.set_ylabel("True")
-#     # set the class labels on the x and y axes explicitly
-#     ax.set_xticks(np.arange(len(np.unique(y_pred))))
-#     ax.set_yticks(np.arange(len(np.unique(y_true))))
-#     fig.tight_layout()
-#     print(f"-- saving confusion matrix to '{path}'...")
-#     plt.savefig(path, dpi=150)
-#     plt.close(fig)
-
-
-# def dump_json(obj, path):
-#     """Dump a JSON file with nice indentation."""
-#     print(f"-- saving JSON results to '{path}'...")
-#     if not path:
-#         return
-#     ensure_dir(path)
-#     with open(path, "w", encoding="utf-8") as f:
-#         json.dump(obj, f, indent=2)
-
+# TODO: see if there are any other places where multiprocessing could be used.
 # ============================
 # Keras Callback: tqdm progress bars
 # ============================
@@ -438,9 +381,9 @@ def main():
 
     default_mode: str = "perp" # ["perp", "mirror"]
     default_subject_id: str = "4"
-    default_epochs: int = 1 # paper used 500 (?)
+    default_epochs: int = 250 # paper used 500 (?)
     default_image_size: int = 320 # was 320, raw image is 640
-    default_progress: str = "tqdm" # ["tqdm", "none"]
+    default_progress: str = "none" # ["tqdm", "none"]
     default_learning_rate: float = 0.0005
     default_weight_decay: float = 0.0001
     default_batch_size: int = 256 # was 256 (larger batch sizes are required for ViTs in order to saturate the GPU)
@@ -451,9 +394,9 @@ def main():
     default_dense_units: int = 2048
 
     # empty string for save or load model will skip save or load
-    default_save_model: str = f"results/models/vit_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.keras"
+    default_save_model: str = f"results/models/vit/vit_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.keras"
     # default_save_model: str = ""
-    # default_load_model: str = f"results/models/vit_perp_subject_2_1_epochs_20260717_191619.keras"
+    # default_load_model: str = f"results/models/vit/vit_perp_subject_2_1_epochs_20260717_191619.keras"
     default_load_model: str = ""
 
     default_metrics_filepath: str = f"results/metrics/vit/metrics_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.json"

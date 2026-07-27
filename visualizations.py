@@ -27,7 +27,6 @@ def train_test_duration_display(training_duration: timedelta, subsecond_precisio
     minutes: int = (remainder % 3600) // 60
     seconds: int = remainder % 60
     microseconds: int = training_duration.microseconds
-    print(f"microseconds: {microseconds}")
     subseconds: float = microseconds / (10 ** (6 - subsecond_precision)) # e.g. microseconds to milliseconds if subsecond_precision is 3
     subseconds_int: int = int(round(subseconds, 0)) # round subseconds to <subsecond_precision> decimal places
 

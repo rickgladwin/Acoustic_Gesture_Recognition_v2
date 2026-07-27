@@ -182,7 +182,6 @@ def build_cnn(input_shape, num_classes,
     # TODO: add additional learning layers (the Dense/ANN layers) to the model (with dropout and other methods to avoid
     #  overtraining)
     
-
     outputs = keras.layers.Dense(num_classes)(x)  # logits
     model = keras.Model(inputs, outputs)
     model.compile(
@@ -197,11 +196,27 @@ def build_cnn(input_shape, num_classes,
 # Main
 # ----------------------------
 def main():
+    # TODO: consider creating a method to save the history objects themselves as data for specific runs.
+    #  That would make the eventual dataset more useful and repeatable.
+    
+    # TODO: consider: more training isn't always better. What we want is training that further incorporates
+    #  the signal in the data (and all the relevant information) in the model's representation, and further ignores the noise.
+    #  How well any given model can do this in the ideal case depends on the architecture. So what we're
+    #  looking to do when choosing when to stop training is to stop when the model's architecture has been given
+    #  properties that fully (up to a theoretical limit) represent the signal and filter out the noise.
+    #  With that in mind, it will help us to have the theoretical limit in advance, rather than running multiple
+    #  trials or circling around a maximum accuracy (or another metric) incrementally. If we reach that theoretical
+    #  limit or an acceptable distance from it, stop.
+    
+    # TODO: look at using some measure of distance from the human-generated attention map to the ViT's generated attention
+    #  map as a loss function or a component of a loss function. (this is probably its own paper, but if you have
+    #  access to both for this study, at least do the distance function and mention this idea in the paper).
+    
     file_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     default_subject_id: str = "4"
     default_mode: str = "perp" # ["perp", "mirror"]
-    default_epochs: int = 1 # 200 to 0.9558 accuracy
+    default_epochs: int = 200 # 200 to 0.9558 accuracy
     default_batch_size: int = 64
     default_filters: list[int] = [16,16,16,16,16]
     default_dense_units: int = 64
@@ -209,9 +224,9 @@ def main():
     default_learning_rate: float = 1e-5 # 5e-5 # default 1e-3
     default_dropout_rate: float = 0.5
     # empty string for save or load model will skip save or load
-    # default_save_model: str = f"results/models/cnn_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.keras"
+    # default_save_model: str = f"results/models/cnn/cnn_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.keras"
     default_save_model: str = ""
-    # default_load_model: str = f"results/models/cnn_perp_subject_2_1_epochs_20260717_191619.keras"
+    # default_load_model: str = f"results/models/cnn/cnn_perp_subject_2_1_epochs_20260717_191619.keras"
     default_load_model: str = ""
     default_metrics_filepath: str = f"results/metrics/cnn/metrics_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.json"
     default_confusion_matrix_filepath: str = f"results/figs/cnn/cm_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
@@ -429,5 +444,7 @@ if __name__ == "__main__":
 
 # ---- References ----
 #
+# TODO: get the source references for LLM responses as well
 # Claude Code running qwen3.6 (2026) "Format a python timedelta as a string" [LLM chat]. 2026–07–26 
 # Google Gemini 3 (2026) "How to get the attention maps for all layers from an existing vision transformer in tensorflow" [LLM chat]. 2026–07–27 
+

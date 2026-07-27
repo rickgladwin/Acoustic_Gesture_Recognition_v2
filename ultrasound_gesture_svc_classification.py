@@ -151,6 +151,12 @@ def main():
     default_metrics_filepath: str = f"results/metrics/svc/metrics_svc_subject_{default_subject_id}_{default_kernel}_kernel_{file_datetime}.json"
     default_confusion_matrix_filepath: str = f"results/figs/svc/cm_svc_subject_{default_subject_id}_{default_kernel}_kernel_{file_datetime}.png"
 
+    # empty string for save or load model will skip save or load
+    # default_save_model: str = f"results/models/svc/svc_{default_mode}_subject_{default_subject_id}_{default_training_set_size}_training_samples_{file_datetime}.keras"
+    default_save_model: str = ""
+    # default_load_model: str = f"results/models/svc/svc_perp_subject_2_1000_training_samples_20260717_191619.keras"
+    default_load_model: str = ""
+
     ap = argparse.ArgumentParser(description="SVM gesture classifier (single subject) with metrics + artifacts.")
     # Paths / data
     ap.add_argument("--root", type=str,
