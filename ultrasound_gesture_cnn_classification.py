@@ -17,56 +17,13 @@ import subprocess
 import platform
 
 import config
-from ultrasound_gesture_vit_classification import plot_history_separately, create_caption_from_details
+from utilities import is_apple_silicon, get_mac_system_info, set_seed, ensure_dir, dump_json
+from visualizations import train_test_duration_display, save_confusion_matrix_png, plot_history_separately
 
 
 # ----------------------------
 # Helpers
 # ----------------------------
-def set_seed(seed: int):
-    import random
-    random.seed(seed)
-    np.random.seed(seed)
-    tf.random.set_seed(seed)
-
-def ensure_dir(path_or_file):
-    if not path_or_file:
-        return
-    d = path_or_file if os.path.isdir(path_or_file) else os.path.dirname(path_or_file)
-    if d:
-        os.makedirs(d, exist_ok=True)
-
-def save_confusion_matrix_png(y_true, y_pred, path, details: dict|None=None):
-    if not path:
-        return
-    ensure_dir(path)
-    cm = confusion_matrix(y_true, y_pred)
-    
-    if details is not None:
-        caption = create_caption_from_details(details)
-    else:
-        caption = ""
-    caption_font_size = 10
-    
-    fig, ax = plt.subplots()
-    im = ax.imshow(cm, interpolation="nearest")
-    ax.set_title("Confusion Matrix")
-    fig.colorbar(im, ax=ax)
-    ax.set_xlabel(f"Predicted\n\n{caption}", fontdict={'size': caption_font_size})
-    ax.set_ylabel("True")
-    # set the class labels on the x and y axes explicitly
-    ax.set_xticks(np.arange(len(np.unique(y_pred))))
-    ax.set_yticks(np.arange(len(np.unique(y_true))))
-    fig.tight_layout()
-    plt.savefig(path, dpi=150)
-    plt.close(fig)
-
-def dump_json(obj, path):
-    if not path:
-        return
-    ensure_dir(path)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(obj, f, indent=2)
 
 # ----------------------------
 # tqdm progress (epoch + batch bars)
@@ -236,73 +193,6 @@ def build_cnn(input_shape, num_classes,
     return model
 
 
-def training_duration_display(training_duration: timedelta, subsecond_precision: int=3) -> str:
-    """
-    Format a python timedelta as a string with the format HH:MM:SS:ffffff where ffffff is subseconds
-    shown to <subsecond_precision> decimal places.
-    Modified code based on Claude Code (2026)
-    """
-    
-    # guard subsecond_precision out of range
-    if subsecond_precision < 0 or subsecond_precision > 6:
-        raise ValueError("subsecond_precision must be between 0 and 6")
-    
-    total_seconds = int(training_duration.total_seconds())
-    days, remainder = divmod(total_seconds, 86400)
-    hours: int = days * 24 + remainder // 3600  # hours can exceed 23 for long durations
-    minutes: int = (remainder % 3600) // 60
-    seconds: int = remainder % 60
-    microseconds: int = training_duration.microseconds
-    print(f"microseconds: {microseconds}")
-    subseconds: float = microseconds / (10 ** (6 - subsecond_precision)) # e.g. microseconds to milliseconds if subsecond_precision is 3
-    subseconds_int: int = int(round(subseconds, 0)) # round subseconds to <subsecond_precision> decimal places
-
-    return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{subseconds_int:02d}" # pad each time place with leading zeros
-
-
-def get_mac_system_info() -> dict:
-    system_details: dict[str, str] = {}
-
-    # Query the exact Mac processor name using sysctl
-    try:
-        cmd = ["sysctl", "-n", "machdep.cpu.brand_string"]
-        processor = subprocess.check_output(cmd).decode().strip()
-    except Exception:
-        processor = platform.processor()
-
-    system_details['processor_type'] = processor
-
-    logical_cpu_cores_count = subprocess.check_output(["sysctl", "-n", "hw.logicalcpu"]).decode().strip()
-
-    system_details['cpu_cores'] = logical_cpu_cores_count
-
-    # Queries the Mac I/O Registry for core-count allocations
-    gpu_cores_raw = subprocess.check_output("ioreg -l | grep gpu-core-count", shell=True).decode()
-    # Extracts the digit assignment from the property string
-    gpu_cores = [s for s in gpu_cores_raw.split() if s.isdigit()][0]
-
-    system_details['gpu_cores'] = gpu_cores
-
-    return system_details
-
-
-def is_apple_silicon():
-    # Direct check (Returns 'arm64' if running natively)
-    if platform.system() == "Darwin" and platform.machine() == "arm64":
-        return True
-
-    # Deep check (Catches Apple Silicon even when emulated via Rosetta)
-    if platform.system() == "Darwin":
-        try:
-            brand = subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"]).decode().strip()
-            if "Apple" in brand:
-                return True
-        except Exception:
-            pass
-
-    return False
-
-
 # ----------------------------
 # Main
 # ----------------------------
@@ -310,21 +200,21 @@ def main():
     file_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     default_subject_id: str = "4"
-    default_mode: str = "perp"
-    default_epochs: int = 20 # 200 to 0.9558 accuracy
+    default_mode: str = "perp" # ["perp", "mirror"]
+    default_epochs: int = 1 # 200 to 0.9558 accuracy
     default_batch_size: int = 64
     default_filters: list[int] = [16,16,16,16,16]
     default_dense_units: int = 64
     default_progress: str = "none" # ["tqdm", "none"]
-    default_learning_rate: float = 5e-5 # default 1e-3
+    default_learning_rate: float = 1e-5 # 5e-5 # default 1e-3
     default_dropout_rate: float = 0.5
     # empty string for save or load model will skip save or load
     # default_save_model: str = f"results/models/cnn_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.keras"
     default_save_model: str = ""
     # default_load_model: str = f"results/models/cnn_perp_subject_2_1_epochs_20260717_191619.keras"
     default_load_model: str = ""
-    default_metrics_filepath: str = f"results/metrics/cnn/metrics_subject_{default_subject_id}_cnn_{default_epochs}_epochs_{file_datetime}.json"
-    default_confusion_matrix_filepath: str = f"results/figs/cnn/cm_subject_{default_subject_id}_cnn_cm_{default_epochs}_epochs_{file_datetime}.png"
+    default_metrics_filepath: str = f"results/metrics/cnn/metrics_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.json"
+    default_confusion_matrix_filepath: str = f"results/figs/cnn/cm_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
     
     # reducing learning rate from 1e-3 to 1e-4 resulted in a smoother validation accuracy curve during training
     
@@ -442,19 +332,23 @@ def main():
             callbacks=callbacks,
             verbose=verbose
         )
+        training_details['training_set_size'] = len(x_train_fit)
         train_end_datetime = datetime.now()
-        training_duration = training_duration_display(train_end_datetime - train_start_datetime)
+        training_duration = train_test_duration_display(train_end_datetime - train_start_datetime)
         training_details['training_duration'] = training_duration
 
         print(f"-- training complete.")
         print(f"-- training duration: {training_duration}")
 
     # Evaluate
+    test_start = datetime.now()
     logits = model.predict(x_test, verbose=0)
     y_pred = np.argmax(logits, axis=1)
+    test_end = datetime.now()
+    test_duration = train_test_duration_display(test_end - test_start)
+    training_details['testing_set_size'] = len(x_test)
+    training_details['testing_duration'] = str(test_duration)
     
-    # TODO: make sure x_test and y_test are subject to the same shuffling, if any
-
     acc = accuracy_score(y_test, y_pred)
     prec, rec, f1, _ = precision_recall_fscore_support(
         y_test, y_pred, average="macro", zero_division=0
@@ -465,7 +359,6 @@ def main():
     print(f"[{args.mode}/{args.subject}] Macro Precision: {prec:.4f}  Macro Recall: {rec:.4f}  Macro F1: {f1:.4f}")
     
     if not trained and history is not None:
-
         if is_apple_silicon():
             # get Mac system info
             mac_system_info: dict[str, str] = get_mac_system_info()
@@ -480,8 +373,12 @@ def main():
 
         loss_title: str = "CNN Model Loss Over Epochs"
         accuracy_title: str = "CNN Model Accuracy Over Epochs"
-
-        history_plot_filename: str = f"results/figs/cnn/history_cnn_{args.epochs}_epochs_{args.lr}_lr_{file_datetime}"
+        
+        # use scientific notation format for learning rate in filepaths
+        # (don't use decimal point)
+        learning_rate_string: str = f"{args.lr:.2e}"
+        learning_rate_string = learning_rate_string.replace(".", "p")
+        history_plot_filename: str = f"results/figs/cnn/history_cnn_{args.epochs}_epochs_{learning_rate_string}_lr_{file_datetime}"
 
         plot_history_separately(training_history=history, loss_plot_title=loss_title, acc_plot_title=accuracy_title, details=training_details, save_plots=True, plot_filename=history_plot_filename)
         # plot_history_together(history)
@@ -489,7 +386,8 @@ def main():
 
     # Save artifacts
     if args.cm:
-        save_confusion_matrix_png(y_test, y_pred, args.cm, training_details)
+        confusion_matrix_title: str = f"CNN Confusion Matrix"
+        save_confusion_matrix_png(y_test, y_pred, args.cm, cm_title=confusion_matrix_title, details=training_details)
         print(f"Saved confusion matrix to: {args.cm}")
 
     if args.save_model:
@@ -525,9 +423,11 @@ def main():
         dump_json(result, args.out)
         print(f"Saved metrics JSON to: {args.out}")
 
+
 if __name__ == "__main__":
     main()
 
 # ---- References ----
 #
 # Claude Code running qwen3.6 (2026) "Format a python timedelta as a string" [LLM chat]. 2026–07–26 
+# Google Gemini 3 (2026) "How to get the attention maps for all layers from an existing vision transformer in tensorflow" [LLM chat]. 2026–07–27 

@@ -20,6 +20,10 @@ import matplotlib.font_manager as fm
 # see https://share.google/aimode/UwSqy8Wxk8WaXGWHX
 from tensorflow.keras import mixed_precision
 
+from ultrasound_gesture_cnn_classification import train_test_duration_display, is_apple_silicon, get_mac_system_info
+from utilities import ensure_dir, set_seed, dump_json, process_pool_size
+from visualizations import create_caption_from_details, plot_history_separately, save_confusion_matrix_png
+
 # Enable mixed float16 precision (mat default to float32 for all operations otherwise)
 # this changed the time per epoch from apx 1m14s to apx 43s
 # early estimate 1h18s down from 2h11m
@@ -47,45 +51,59 @@ import config
 # ============================
 # Helpers
 # ============================
-def set_seed(seed: int):
-    """Make runs reproducible across numpy and TF."""
-    import random
-    random.seed(seed)
-    np.random.seed(seed)
-    tf.random.set_seed(seed)
+# def set_seed(seed: int):
+#     """Make runs reproducible across numpy and TF."""
+#     import random
+#     random.seed(seed)
+#     np.random.seed(seed)
+#     tf.random.set_seed(seed)
+# 
+
+# def ensure_dir(p):
+#     """Create parent directory for a file path if it does not exist."""
+#     if p:
+#         os.makedirs(os.path.dirname(p), exist_ok=True)
+# 
+
+# def save_confusion_matrix_png(y_true, y_pred, path, cm_title: str|None=None, details: dict|None=None):
+#     """Save a simple confusion matrix figure and the related training details to PNG."""
+#     if not path:
+#         return
+#     ensure_dir(path)
+#     cm = confusion_matrix(y_true, y_pred)
+# 
+#     if details is not None:
+#         caption = create_caption_from_details(details)
+#     else:
+#         caption = ""
+#     caption_font_size = 10
+# 
+#     fig, ax = plt.subplots()
+#     im = ax.imshow(cm, interpolation="nearest")
+#     if cm_title is not None:
+#         ax.set_title(cm_title)
+#     else:
+#         ax.set_title("Confusion Matrix")
+#     fig.colorbar(im, ax=ax)
+#     ax.set_xlabel(f"Predicted\n\n{caption}", fontdict={'size': caption_font_size})
+#     ax.set_ylabel("True")
+#     # set the class labels on the x and y axes explicitly
+#     ax.set_xticks(np.arange(len(np.unique(y_pred))))
+#     ax.set_yticks(np.arange(len(np.unique(y_true))))
+#     fig.tight_layout()
+#     print(f"-- saving confusion matrix to '{path}'...")
+#     plt.savefig(path, dpi=150)
+#     plt.close(fig)
 
 
-def ensure_dir(p):
-    """Create parent directory for a file path if it does not exist."""
-    if p:
-        os.makedirs(os.path.dirname(p), exist_ok=True)
-
-
-def save_confusion_matrix_png(y_true, y_pred, path):
-    """Save a simple confusion matrix figure to PNG."""
-    print(f"-- saving confusion matrix to '{path}'...")
-    if not path:
-        return
-    ensure_dir(path)
-    cm = confusion_matrix(y_true, y_pred)
-    fig, ax = plt.subplots()
-    im = ax.imshow(cm, interpolation="nearest")
-    ax.set_title("Confusion Matrix")
-    fig.colorbar(im, ax=ax)
-    ax.set_xlabel("Predicted")
-    ax.set_ylabel("True")
-    fig.tight_layout()
-    plt.savefig(path, dpi=150)
-    plt.close(fig)
-
-def dump_json(obj, path):
-    """Dump a JSON file with nice indentation."""
-    print(f"-- saving JSON results to '{path}'...")
-    if not path:
-        return
-    ensure_dir(path)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(obj, f, indent=2)
+# def dump_json(obj, path):
+#     """Dump a JSON file with nice indentation."""
+#     print(f"-- saving JSON results to '{path}'...")
+#     if not path:
+#         return
+#     ensure_dir(path)
+#     with open(path, "w", encoding="utf-8") as f:
+#         json.dump(obj, f, indent=2)
 
 # ============================
 # Keras Callback: tqdm progress bars
@@ -206,11 +224,14 @@ def mlp(x, hidden_units, dropout_rate):
         x = keras.layers.Dropout(dropout_rate)(x)
     return x
 
-def build_vit(input_shape, num_classes,
+def build_vit_with_attention_output(input_shape, num_classes,
               patch_size=32, projection_dim=64, num_heads=8,
               transformer_layers=6, transformer_units=(128, 64),
-              mlp_head_units=(512, 256), learning_rate: float=1e-3):
-    """Build a compact ViT classifier (no CLS token; flatten + MLP head)."""
+              mlp_head_units=(512, 256), learning_rate: float=1e-3) -> keras.Model:
+    """
+    Build a compact ViT classifier (no CLS token; flatten + MLP head).
+    Provide attention information for visualizing and using attention maps.
+    """
     h, w, _ = input_shape
     num_patches = (h // patch_size) * (w // patch_size)
 
@@ -221,7 +242,7 @@ def build_vit(input_shape, num_classes,
     for _ in range(transformer_layers):
         x1 = keras.layers.LayerNormalization(epsilon=1e-6)(encoded)
         attn = keras.layers.MultiHeadAttention(
-            num_heads=num_heads, key_dim=projection_dim, dropout=0.1
+            num_heads=num_heads, key_dim=projection_dim, dropout=0.1, return_attention_scores=True
         )(x1, x1)
         x2 = keras.layers.Add()([attn, encoded])
         x3 = keras.layers.LayerNormalization(epsilon=1e-6)(x2)
@@ -250,6 +271,75 @@ def build_vit(input_shape, num_classes,
         metrics=[keras.metrics.SparseCategoricalAccuracy(name="accuracy")],
     )
     return model
+
+
+def get_vit_attention_model(existing_model):
+    """
+    Extract attention scores from a ViT model.
+    Modified version of code from Google Gemini 3 (2026)
+    """
+    # Find all attention score output tensors across the ViT layers
+    attention_outputs = []
+
+    for layer in existing_model.layers:
+        # Check for ViT block structures or direct attention layers
+        if 'attention' in layer.name.lower():
+            # Ensure the layer outputs weights, or target the internal softmax tensor
+            attention_outputs.append(layer.output[1]) # Index 1 usually holds scores if return_scores=True
+
+    # Create a multi-output model
+    return tf.keras.Model(
+        inputs=existing_model.input,
+        outputs={'preds': existing_model.output, 'attentions': attention_outputs}
+    )
+
+
+def build_vit(input_shape, num_classes,
+              patch_size=32, projection_dim=64, num_heads=8,
+              transformer_layers=6, transformer_units=(128, 64),
+              mlp_head_units=(512, 256), learning_rate: float=1e-3) -> keras.Model:
+    """Build a compact ViT classifier (no CLS token; flatten + MLP head)."""
+    h, w, _ = input_shape
+    num_patches = (h // patch_size) * (w // patch_size)
+
+    inputs = keras.layers.Input(shape=input_shape)
+    patches = Patches(patch_size)(inputs)
+    encoded = PatchEncoder(num_patches, projection_dim)(patches)
+
+    for _ in range(transformer_layers):
+        x1 = keras.layers.LayerNormalization(epsilon=1e-6)(encoded)
+        attn = keras.layers.MultiHeadAttention(
+            num_heads=num_heads, key_dim=projection_dim, dropout=0.1
+        )(x1, x1)
+        x2 = keras.layers.Add()([attn, encoded])
+        x3 = keras.layers.LayerNormalization(epsilon=1e-6)(x2)
+        x3 = mlp(x3, hidden_units=transformer_units, dropout_rate=0.1)
+        encoded = keras.layers.Add()([x3, x2])
+
+    # TODO: play with the number of dropout layers in the ViT and their placement
+    # TODO: see if a recurrent connection is appropriate (are there enough unshuffled frames in each 100-frame
+    #  labelled sequence in the dataset to use the time-dependent information, or do I need a different dataset
+    #  for that?)
+    # TODO: see if a contour-based method, rather than the uniform 16x16 grid, would work for the initial selection
+    #  of attention regions for this ViT. These images may be good candidates – the shapes we're looking at don't have
+    #  foreground and background regions nor internal/hierarchical objects, like a dog's face. They're basic shapes
+    #  like oblong/oval shapes, blobs or rings of light on dark.
+
+    representation = keras.layers.LayerNormalization(epsilon=1e-6)(encoded)
+    representation = keras.layers.Flatten()(representation)
+    representation = keras.layers.Dropout(0.5)(representation)
+    features = mlp(representation, hidden_units=mlp_head_units, dropout_rate=0.5)
+    logits = keras.layers.Dense(num_classes)(features)
+
+    model = keras.Model(inputs=inputs, outputs=logits)
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
+        loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+        metrics=[keras.metrics.SparseCategoricalAccuracy(name="accuracy")],
+    )
+    return model
+
+
 
 # ============================
 # Data loading
@@ -290,182 +380,6 @@ def load_subject_arrays(root, mode, subject, image_size):
     num_classes = int(max(y_train.max(), y_test.max()) + 1)
     return (x_train, y_train), (x_test, y_test), num_classes
 
-def plot_history_together(training_history: History):
-    # Convert history dictionary to DataFrame
-    history_df = pd.DataFrame(training_history.history)
-    
-    # Plot all metrics at once
-    history_df.plot(figsize=(10, 6))
-    plt.grid(True)
-    # plt.gca().set_ylim(0, 1) # Optional: clamp y-axis between 0 and 1 for accuracy
-    plt.xlabel("Epochs")
-    plt.show()
-    
-
-def create_caption_from_details(details: dict) -> str:
-    key_val_separator: str = ": "
-    fill_char: str = '.'
-
-    caption: str = ""
-    max_detail_width: int = 0
-
-    # build caption text from details dictionary
-    for key, value in details.items():
-        detail_width: int = len(key) + len(key_val_separator) + len(str(value))
-        if detail_width > max_detail_width:
-            max_detail_width = detail_width
-        caption += f"{key}{key_val_separator}{value}\n"
-    # remove last separator
-    caption = caption.rstrip("\n")
-    # add padding to caption lines
-    for line in caption.split("\n"):
-        # option 1: pad right (left justify)
-        # caption = caption.replace(line, line.ljust(max_detail_width, fill_char))
-
-        # option 2: pad between key and value
-        key: str = line.split(key_val_separator)[0]
-        val: str = line.split(key_val_separator)[1]
-        fill_width: int = max_detail_width - len(line)
-        new_line: str = f"{key}{key_val_separator}{fill_char * fill_width}{val}"
-        caption = caption.replace(line, new_line) 
-    return caption
-
-
-def set_global_matplotlib_font(font_family_cascade: list[str]|None=None, default_font_type: list[str]|None=None):
-    # TODO: finish font setting method
-    # all fonts in font_family_cascade must be system fonts detectable by matplotlib using fm.fontManager.ttflist
-    # font_type is one of ['serif', 'sans-serif', 'cursive', 'fantasy', 'monospace']
-    if font_family_cascade is None:
-        font_family_cascade = ['Inconsolata', 'Andale Mono']
-    if default_font_type is None:
-        font_type_fallback = ['sans-serif']
-
-    # set global matplotlib font 
-    # set a cascade of font families in order of preference
-    font_family_cascade = ['Inconsolata', 'Andale Mono']
-    font_type_fallback = ['monospace']
-
-    # check available fonts
-    font_names = sorted({f.name for f in fm.fontManager.ttflist})
-    print("fonts:")
-    # look for the preferred fonts in the found system fonts
-    preferred_font_found = False
-    selected_font = None
-    for preferred_font in font_family_cascade:
-        if preferred_font in font_names:
-            preferred_font_found = True
-            selected_font = preferred_font
-            break
-    if not preferred_font_found:
-        selected_font = font_type_fallback[0]
-
-    # set the global matplotlib font
-    plt.rcParams['font.family'] = selected_font 
-
-    
-def plot_history_separately(training_history: History, loss_plot_title: str|None=None, acc_plot_title: str|None=None, details: dict|None=None, save_plots: bool=False, plot_filename: str|None=None):
-    """
-    Creates side-by-side subplots to display the loss and accuracy history over
-    epochs for both training and validation datasets. Training details and plot titles can be added.
-    Plots can be saved or displayed, depending on the value of `save_plots`.
-
-    Args:
-        training_history (History): The training history object obtained from model training.
-        loss_plot_title (str | None): Optional custom title for the loss plot. Defaults to 
-            'Model Loss Over Epochs' if None.
-        acc_plot_title (str | None): Optional custom title for the accuracy plot. Defaults
-            to 'Model Accuracy Over Epochs' if None.
-        details (dict | None): Optional dictionary containing additional details about the
-            training run to be added as a caption to the plots.
-        save_plots (bool): If True, saves the generated plots to a file. If False, displays the plots.
-        plot_filename (str | None): Filename for saving the plots. If None and save_plots 
-            is True, a default filename is used. Ignored if save_plots is False.
-
-    Raises:
-        KeyError: Raised if expected keys like 'loss', 'val_loss', 'accuracy', or 'val_accuracy'
-            are missing from the training history.
-
-    Returns:
-        None: This function does not return any value and either shows or saves the plots.
-    """
-    # TODO: move font setter to its own function
-    # set global matplotlib font 
-    # set a cascade of font families in order of preference
-    font_family_cascade = ['Inconsolata', 'Andale Mono']
-    font_type_fallback = ['monospace']
-    
-    # check available fonts
-    font_names = sorted({f.name for f in fm.fontManager.ttflist})
-    print("fonts:")
-    # look for the preferred fonts in the found system fonts
-    preferred_font_found = False
-    selected_font = None
-    for preferred_font in font_family_cascade:
-        if preferred_font in font_names:
-            preferred_font_found = True
-            selected_font = preferred_font
-            break
-    if not preferred_font_found:
-        selected_font = font_type_fallback[0]
-    
-    # set the global matplotlib font
-    plt.rcParams['font.family'] = selected_font
-    caption_font_size: int = 8
-    
-    # Create a figure with two subplots side-by-side
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-    
-    # create plot caption
-    if details is not None:
-        caption = create_caption_from_details(details)
-    else:
-        caption = ""
-
-    # Plot Training & Validation Loss
-    loss_title: str = loss_plot_title if loss_plot_title is not None else 'Model Loss Over Epochs'
-
-    ax1.plot(training_history.history['loss'], label='Train Loss', color='blue', linewidth=2)
-    if 'val_loss' in training_history.history:
-        ax1.plot(training_history.history['val_loss'], label='Val Loss', color='orange', linestyle='-', linewidth=2)
-    ax1.set_title(loss_title)
-    # adding the caption to the X label is the simplest way to display it
-    ax1.set_xlabel(f'Epochs\n\n{caption}', fontdict={'size': caption_font_size})
-    ax1.set_ylabel('Loss')
-    ax1.legend()
-    ax1.grid(True)
-    
-    # Plot Training & Validation Accuracy
-    acc_title: str = acc_plot_title if acc_plot_title is not None else 'Model Accuracy Over Epochs'
-    
-    # Note: Use 'acc' instead of 'accuracy' if you are using an older Keras version
-    acc_key = 'accuracy' if 'accuracy' in training_history.history else 'acc'
-    ax2.plot(training_history.history[acc_key], label='Train Accuracy', color='blue', linewidth=2)
-    
-    val_acc_key = 'val_' + acc_key
-    if val_acc_key in training_history.history:
-        ax2.plot(training_history.history[val_acc_key], label='Val Accuracy', color='orange', linestyle='-', linewidth=2)
-    ax2.set_title(acc_title)
-    # ax2.set_xlabel(f'Epochs\n\n{caption}')
-    ax2.set_xlabel(f'Epochs\n\n{caption}', fontdict={'size': caption_font_size})
-    ax2.set_ylabel('Accuracy')
-    ax2.legend()
-    ax2.grid(True)
-    
-    # add caption with training run details
-    # NOTE: this method requires modifying the axis locations so that the axes are smaller than
-    # the figure size. Easier to add the caption to the X label, unless adding the caption inside the
-    # bounds of the axes, as an overlay on the plot itself.
-    # plt.figtext(x=0.1, y=0.75, s=caption, wrap=True, horizontalalignment='left', fontsize=10)
-    
-    plt.tight_layout()
-    
-    if save_plots:
-        if plot_filename is None:
-            plot_filename = f"?_?_epochs_?_lr_?"
-        plt.savefig(plot_filename, dpi=150)
-        plt.close(fig)
-    else:
-        plt.show()
 
 
 # ============================
@@ -474,7 +388,7 @@ def plot_history_separately(training_history: History, loss_plot_title: str|None
 def main():
     # TODO: ** find additional ViT examples (with attention biasing)
     # TODO: ** find any ultrasound ViT examples (with or without attention biasing)
-
+    
     # MPS for pytorch
     # confirm that an accelerator device is available (we expect
     # mps.device_count >= 1)
@@ -519,10 +433,12 @@ def main():
     #  in this direction, but one so large? Maybe overfitting on the training set? Or
     #  is there a difference between the test and training sets? We are shuffling the
     #  training set but not the test set. Maybe start there?
-    
-    
-    default_subject_id: str = "2"
-    default_epochs: int = 100
+
+    file_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    default_mode: str = "perp" # ["perp", "mirror"]
+    default_subject_id: str = "4"
+    default_epochs: int = 1 # paper used 500 (?)
     default_image_size: int = 320 # was 320, raw image is 640
     default_progress: str = "tqdm" # ["tqdm", "none"]
     default_learning_rate: float = 0.0005
@@ -533,6 +449,16 @@ def main():
     default_num_layers: int = 8
     default_projection_dim: int = 64
     default_dense_units: int = 2048
+
+    # empty string for save or load model will skip save or load
+    default_save_model: str = f"results/models/vit_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.keras"
+    # default_save_model: str = ""
+    # default_load_model: str = f"results/models/vit_perp_subject_2_1_epochs_20260717_191619.keras"
+    default_load_model: str = ""
+
+    default_metrics_filepath: str = f"results/metrics/vit/metrics_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.json"
+    default_confusion_matrix_filepath: str = f"results/figs/vit/cm_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
+
     
     # TODO: include global tensorflow precision setting in training details
     # TODO: include model type in title for loss + acc plots
@@ -545,7 +471,7 @@ def main():
         default=config.default_dataset_path,
         help="Root folder containing 'mirror' and 'perp'.")
     # parser.add_argument("--mode", type=str, choices=["mirror", "perp"], default="mirror",
-    parser.add_argument("--mode", type=str, choices=["mirror", "perp"], default="perp",
+    parser.add_argument("--mode", type=str, choices=["mirror", "perp"], default=default_mode,
         help="Dataset mode: mirror or perp.")
     # parser.add_argument("--subject", type=str, default="Subject_1",
     parser.add_argument("--subject", type=str, default=f"Subject_{default_subject_id}",
@@ -563,12 +489,12 @@ def main():
     parser.add_argument("--progress", type=str, choices=["tqdm", "none"], default=default_progress,
         help="Use tqdm progress bars (tqdm) or Keras logging only (none).")
     # Save / load
-    parser.add_argument("--load-model", type=str, default="", help="Path to an existing .keras model to load (skip training if provided).")
-    parser.add_argument("--save-model", type=str, default="", help="Path to save trained model, e.g., results/vit_mirror_subject1.keras")
+    parser.add_argument("--load-model", type=str, default=default_load_model, help="Path to an existing .keras model to load (skip training if provided).")
+    parser.add_argument("--save-model", type=str, default=default_save_model, help="Path to save trained model, e.g., results/vit_mirror_subject1.keras")
     # parser.add_argument("--out", type=str, default="", help="Path to save metrics JSON, e.g., results/subject1_vit.json")
     file_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
-    parser.add_argument("--out", type=str, default=f"results/subject_{default_subject_id}_vit_{default_epochs}_epochs_{file_datetime}.json", help="Path to save metrics JSON, e.g., results/subject1_vit.json")
-    parser.add_argument("--cm", type=str, default=f"results/figs/vit/subject_{default_subject_id}_vit_cm_{default_epochs}_epochs_{file_datetime}.png", help="Path to save confusion matrix PNG, e.g., results/figs/subject1_vit_cm.png")
+    parser.add_argument("--out", type=str, default=default_metrics_filepath, help="Path to save metrics JSON, e.g., results/subject1_vit.json")
+    parser.add_argument("--cm", type=str, default=default_confusion_matrix_filepath, help="Path to save confusion matrix PNG, e.g., results/figs/subject1_vit_cm.png")
 
     args = parser.parse_args()
     set_seed(args.seed)
@@ -628,41 +554,58 @@ def main():
     if args.progress == "tqdm":
         callbacks.append(TqdmProgress(enable=True))
 
+    # training_details is used to label result plots
+    training_details: dict = {
+        "mode": args.mode,
+        "subject": args.subject,
+        "image_dimensions": f"{args.image_size}x{args.image_size}",
+        "epochs": args.epochs,
+        "batch_size": args.batch_size,
+        "learning_rate": args.lr,
+        # "dropout": args.dropout,
+        "val_split": args.val_split,
+    }
+    
+    history: keras.callbacks.History|None = None
+    
     # Train (unless we loaded a pre-trained model)
     if not trained:
         print(f"-- training model for '{args.mode}/{args.subject}'...")
+        # choose how many processors to use for multiprocessing
+        worker_count = process_pool_size(reserve_cores_count=1, verbose=True)
         # Note: with verbose=0, Keras won’t print per-batch/epoch lines; tqdm shows the progress instead.
+        train_start_datetime = datetime.now()
         history = model.fit(
             x_train_fit, y_train_fit,
             batch_size=args.batch_size,
             epochs=args.epochs,
             validation_data=(x_val, y_val),
             callbacks=callbacks,
-            verbose=verbose
+            verbose=verbose,
+            use_multiprocessing=True,
+            workers=worker_count,
         )
+        training_details['training_set_size'] = len(x_train_fit)
+        train_end_datetime = datetime.now()
+        training_duration = train_test_duration_display(train_end_datetime - train_start_datetime)
+        training_details['training_duration'] = training_duration
         print(f"-- training complete.")
         
-        print(f"plotting training history...")
-
-        # training_details is used to label result plots
-        training_details: dict = {
-            "mode": args.mode,
-            "subject": args.subject,
-            "image_dimensions": f"{args.image_size}x{args.image_size}",
-            "epochs": args.epochs,
-            "batch_size": args.batch_size,
-            "learning_rate": args.lr,
-            # "dropout": args.dropout,
-            "val_split": args.val_split,
-        }
-
         # TODO: add title and run details to these functions as arguments
-        plot_history_separately(history, details=training_details)
+        # plot_history_separately(history, details=training_details)
         # plot_history_together(history)
     
     # Evaluate on test
+    # logits = model.predict(x_test, verbose=0)
+    # y_pred = np.argmax(logits, axis=1)
+
+    test_start = datetime.now()
     logits = model.predict(x_test, verbose=0)
     y_pred = np.argmax(logits, axis=1)
+    test_end = datetime.now()
+    test_duration = train_test_duration_display(test_end - test_start)
+    training_details['testing_set_size'] = len(x_test)
+    training_details['testing_duration'] = str(test_duration)
 
     acc = accuracy_score(y_test, y_pred)
     prec, rec, f1, _ = precision_recall_fscore_support(
@@ -673,9 +616,38 @@ def main():
     print(f"[{args.mode}/{args.subject}] Random Accuracy: {1/num_classes:.4f}")
     print(f"[{args.mode}/{args.subject}] Macro Precision: {prec:.4f}  Macro Recall: {rec:.4f}  Macro F1: {f1:.4f}")
 
+    if not trained and history is not None:
+        if is_apple_silicon():
+            # get Mac system info
+            mac_system_info: dict[str, str] = get_mac_system_info()
+
+            training_details['processor_type'] = mac_system_info["processor_type"]
+            training_details['cpu_cores'] = mac_system_info["cpu_cores"]
+            training_details['gpu_cores'] = mac_system_info["gpu_cores"]
+
+            training_details['test_accuracy'] = f"{acc:.4f}"
+
+        print(f"plotting training history...")
+
+        loss_title: str = "ViT Model Loss Over Epochs"
+        accuracy_title: str = "ViT Model Accuracy Over Epochs"
+
+        # use scientific notation format for learning rate in filepaths
+        # (don't use decimal point)
+        learning_rate_string: str = f"{args.lr:.2e}"
+        learning_rate_string = learning_rate_string.replace(".", "p")
+        history_plot_filename: str = f"results/figs/vit/history_vit_{args.epochs}_epochs_{learning_rate_string}_lr_{file_datetime}"
+
+        print(f"plotting training history...")
+
+        plot_history_separately(training_history=history, loss_plot_title=loss_title, acc_plot_title=accuracy_title, details=training_details, save_plots=True, plot_filename=history_plot_filename)
+        # plot_history_together(history)
+        print(f"Saved training history plots to: {history_plot_filename}")
+
     # Save CM and model/metrics if requested
     if args.cm:
-        save_confusion_matrix_png(y_test, y_pred, args.cm)
+        confusion_matrix_title: str = f"ViT Confusion Matrix"
+        save_confusion_matrix_png(y_test, y_pred, args.cm, cm_title=confusion_matrix_title, details=training_details)
         print(f"Saved confusion matrix to: {args.cm}")
 
     if args.save_model:
@@ -706,6 +678,30 @@ def main():
         }
         dump_json(result, args.out)
         print(f"Saved metrics JSON to: {args.out}")
+    
+    # Get attention maps from ViT model
+    ## Instantiate the extraction model
+    attn_extraction_model = get_vit_attention_model(model)
+
+    # TODO: research and implement GRAD-CAM attention visualization for this ViT
+    #  GRAD-CAM visualizes one class at a time, which is exactly what we need for
+    #  attention maps that we expect to correspond to muscle synergy groups.
+    #  NOTE: if these attention maps turn out to not overlap with expected regions
+    #  of the images, consider using:
+    #  - a different visualization technique
+    #  - a different way of generating attention maps (look for a kind of "feature significance"
+    #    calculation, based on small increments to the relevant regions and their effect on
+    #    the class prediction accuracy. Could also try masking techniques, though these
+    #    don't always result in useful visualizations, especially for small datasets (?)
+    
+    # Inference
+    # TODO: follow the rest of the Gemini-generated suggestions for visualization and rollout
+    # TODO: consider following the Medium article, though it's a paid article.
+    # outputs = attn_extraction_model(image_tensor, training=False)
+    # attention_maps = outputs['attentions'] # List of tensors: [batch, heads, tokens, tokens]
+    
+    # Average across attention heads for layer 0
+    # layer_0_attn = tf.reduce_mean(attention_maps[0], axis=1)
 
 if __name__ == "__main__":
     # example command:
