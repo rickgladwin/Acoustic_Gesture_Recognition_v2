@@ -1,5 +1,5 @@
 # trained model files (typically GB size files for SVC)
-results/*.keras
+results/**/*.keras
 
 Data/
 
