@@ -257,7 +257,7 @@ def training_duration_display(training_duration: timedelta, subsecond_precision:
     subseconds: float = microseconds / (10 ** (6 - subsecond_precision)) # e.g. microseconds to milliseconds if subsecond_precision is 3
     subseconds_int: int = int(round(subseconds, 0)) # round subseconds to <subsecond_precision> decimal places
 
-    return f"{hours:02d}:{minutes:02d}:{seconds:02d}:{subseconds_int:02d}" # pad each time place with leading zeros
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{subseconds_int:02d}" # pad each time place with leading zeros
 
 
 def get_mac_system_info() -> dict:
