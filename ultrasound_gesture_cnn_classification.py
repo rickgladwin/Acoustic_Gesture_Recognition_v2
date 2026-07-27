@@ -311,7 +311,7 @@ def main():
     
     default_subject_id: str = "4"
     default_mode: str = "perp"
-    default_epochs: int = 1 # 200 to 0.9558 accuracy
+    default_epochs: int = 20 # 200 to 0.9558 accuracy
     default_batch_size: int = 64
     default_filters: list[int] = [16,16,16,16,16]
     default_dense_units: int = 64
