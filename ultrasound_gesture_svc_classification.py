@@ -141,6 +141,15 @@ def pipeline_from_steps(steps_list: list[tuple]):
 def main():
     file_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
     
+    # TODO: training the SVC model on a high enough number of samples results in the same test accuracy
+    #  every time, regardless of sample number, beyond a certain number.
+    #  I suspect this reflects a level of irreducible uncertainty due to the data and the architecture.
+    #  Check and see if this maximum test accuracy is the same for all subjects, and if this behaviour
+    #  is the same. If the behaviour is the same and the number is the same for other subjects, then this
+    #  may be the limit based on the architecture. If the behaviour is the same and the number is different,
+    #  this may be the limit based on the data.
+    #  There may be a way of exploring aleatoric vs epistemic uncertainty.
+    
     default_max_iterations: int = 2000 # 2000
     default_mode: str = "perp" # ["perp", "mirror"]
     # NOTE: rbf can consume more RAM than linear. In case of exit code 137 (Out Of Memory error),

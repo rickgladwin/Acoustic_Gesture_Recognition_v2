@@ -216,7 +216,7 @@ def main():
     
     default_subject_id: str = "4"
     default_mode: str = "perp" # ["perp", "mirror"]
-    default_epochs: int = 200 # 200 to 0.9558 accuracy
+    default_epochs: int = 1000 # 200 to 0.9558 accuracy
     default_batch_size: int = 64
     default_filters: list[int] = [16,16,16,16,16]
     default_dense_units: int = 64
@@ -337,7 +337,7 @@ def main():
         print(f"-- training model for '{args.mode}/{args.subject}'...")
         train_start_datetime = datetime.now()
 
-        history = model.fit(
+        history: History = model.fit(
             # x_train, y_train,
             x_train_fit, y_train_fit,
             batch_size=args.batch_size,
@@ -351,6 +351,17 @@ def main():
         train_end_datetime = datetime.now()
         training_duration = train_test_duration_display(train_end_datetime - train_start_datetime)
         training_details['training_duration'] = training_duration
+        
+        # TODO: add max validation accuracy and max validation accuracy epoch to training details
+        # TODO: add this in all relevant places
+
+        # Note: Use 'acc' instead of 'accuracy' if you are using an older Keras version
+        acc_key = 'accuracy' if 'accuracy' in history.history else 'acc'
+        max_validation_acc = max(history.history[acc_key])
+        max_validation_acc_epoch = history.history[acc_key].index(max_validation_acc) + 1
+    
+        training_details['max_val_acc'] = f"{max_validation_acc:.4f}"
+        training_details['max_val_acc_epoch'] = max_validation_acc_epoch
 
         print(f"-- training complete.")
         print(f"-- training duration: {training_duration}")
