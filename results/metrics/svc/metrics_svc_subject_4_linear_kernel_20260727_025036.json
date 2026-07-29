@@ -1,0 +1,21 @@
+{
+  "model": "svc_linear",
+  "mode": "perp",
+  "subject": "Subject_4",
+  "n_classes": 12,
+  "metrics": {
+    "accuracy": 0.9908333333333333,
+    "precision_macro": 0.9908415841584158,
+    "recall_macro": 0.9908333333333333,
+    "f1_macro": 0.9908333124994791
+  },
+  "confusion_matrix_path": "results/figs/svc/cm_svc_subject_4_linear_kernel_20260727_025036.png",
+  "params": {
+    "kernel": "linear",
+    "C": 10.0,
+    "gamma": "ignored",
+    "max_iter": 2000,
+    "class_weight": null,
+    "standardize": true
+  }
+}

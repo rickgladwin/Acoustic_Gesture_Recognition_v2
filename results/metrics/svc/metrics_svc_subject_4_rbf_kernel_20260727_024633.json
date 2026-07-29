@@ -1,0 +1,21 @@
+{
+  "model": "svc_rbf",
+  "mode": "perp",
+  "subject": "Subject_4",
+  "n_classes": 12,
+  "metrics": {
+    "accuracy": 0.9083333333333333,
+    "precision_macro": 0.8670915841584158,
+    "recall_macro": 0.9083333333333333,
+    "f1_macro": 0.8808333124994792
+  },
+  "confusion_matrix_path": "results/figs/svc/cm_svc_subject_4_rbf_kernel_20260727_024633.png",
+  "params": {
+    "kernel": "rbf",
+    "C": 10.0,
+    "gamma": "scale",
+    "max_iter": 2000,
+    "class_weight": null,
+    "standardize": true
+  }
+}
