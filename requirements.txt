@@ -10,3 +10,8 @@ pandas
 joblib
 
 skmetal
+
+tf-explain
+
+opencv-python
+

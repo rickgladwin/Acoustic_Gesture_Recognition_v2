@@ -16,6 +16,8 @@ from tqdm.auto import tqdm
 import subprocess
 import platform
 
+from tf_explain.callbacks.grad_cam import GradCAMCallback
+
 import config
 from utilities import is_apple_silicon, get_mac_system_info, set_seed, ensure_dir, dump_json
 from visualizations import train_test_duration_display, save_confusion_matrix_png, plot_history_separately
@@ -211,13 +213,17 @@ def main():
     # TODO: look at using some measure of distance from the human-generated attention map to the ViT's generated attention
     #  map as a loss function or a component of a loss function. (this is probably its own paper, but if you have
     #  access to both for this study, at least do the distance function and mention this idea in the paper).
+
+    # TODO: implement tf-explain on the CNN model
+    # https://github.com/sicara/tf-explain
     
     file_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     default_subject_id: str = "4"
     default_mode: str = "perp" # ["perp", "mirror"]
-    default_epochs: int = 1000 # 200 to 0.9558 accuracy
+    default_epochs: int = 50 # 200 to 0.9558 accuracy
     default_batch_size: int = 64
+    default_explain_method: str = "GradCAM" #
     default_filters: list[int] = [16,16,16,16,16]
     default_dense_units: int = 64
     default_progress: str = "none" # ["tqdm", "none"]
@@ -256,6 +262,8 @@ def main():
     # ap.add_argument("--progress", type=str, choices=["tqdm", "none"], default="tqdm",
     ap.add_argument("--progress", type=str, choices=["tqdm", "none"], default=default_progress,
         help="tqdm progress bars (tqdm) or Keras logs only (none).")
+    ap.add_argument("--explain-method", type=str, default=default_explain_method, help="CNN attention visualization, e.g. 'GradCAM'")
+    ap.add_argument("--explain-output-folder", type=str, default="results/attention/cnn/")
     # Model knobs (optional)
     ap.add_argument("--filters", type=int, nargs="+", default=default_filters, help="Conv filters per block.")
     ap.add_argument("--dense", type=int, default=default_dense_units, help="Units in the penultimate dense layer.")
@@ -318,6 +326,13 @@ def main():
     verbose = 0 if args.progress == "tqdm" else 2
     if args.progress == "tqdm":
         callbacks.append(TqdmProgress(enable=True))
+    # CNN attention visualization
+    if args.explain_method == "GradCAM":
+        callbacks.append(GradCAMCallback(
+            validation_data=(x_val, y_val),
+            class_index=0,
+            output_dir=args.explain_output_folder,
+        ))
 
     # training_details is used to label result plots
     training_details: dict = {
@@ -334,6 +349,8 @@ def main():
     # Train
     history: History|None = None
     if not trained:
+
+
         print(f"-- training model for '{args.mode}/{args.subject}'...")
         train_start_datetime = datetime.now()
 
