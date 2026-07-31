@@ -221,7 +221,8 @@ def main():
     
     default_subject_id: str = "4"
     default_mode: str = "perp" # ["perp", "mirror"]
-    default_epochs: int = 50 # 200 to 0.9558 accuracy
+    default_image_size: int = 240 # was 320. Source images are 640x640, but these take a long time to process
+    default_epochs: int = 10 # 200 to 0.9558 accuracy
     default_batch_size: int = 64
     default_explain_method: str = "GradCAM" #
     default_filters: list[int] = [16,16,16,16,16]
@@ -232,8 +233,8 @@ def main():
     # empty string for save or load model will skip save or load
     # default_save_model: str = f"results/models/cnn/cnn_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.keras"
     default_save_model: str = ""
-    # default_load_model: str = f"results/models/cnn/cnn_perp_subject_2_1_epochs_20260717_191619.keras"
-    default_load_model: str = ""
+    default_load_model: str = f"results/models/cnn/cnn_perp_subject_4_200_epochs_20260719_133931.keras"
+    # default_load_model: str = ""
     default_metrics_filepath: str = f"results/metrics/cnn/metrics_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.json"
     default_confusion_matrix_filepath: str = f"results/figs/cnn/cm_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
     
@@ -252,7 +253,7 @@ def main():
         help="Dataset mode: mirror or perp.")
     ap.add_argument("--subject", type=str, default=f"Subject_{default_subject_id}",
         help="Subject folder name.")
-    ap.add_argument("--image-size", type=int, default=320,
+    ap.add_argument("--image-size", type=int, default=default_image_size,
         help="Model input size (pixels).")
     # Training
     ap.add_argument("--epochs", type=int, default=default_epochs, help="Number of training epochs.")
@@ -288,6 +289,14 @@ def main():
 
     input_shape = (args.image_size, args.image_size, 1)
     print(f"-- input shape: {input_shape}")
+    
+    # TODO: perform Integrated Gradient attribution for each image in each class
+    # TODO: combine the IG attribution maps for all images in each class
+    # TODO: compare the IG attribution maps for each class:
+    #  - to each other
+    #  - to the ViT attention maps for each class
+    #  - to combined differencing maps
+    #  - to human expert maps
 
     # The raw training arrays are grouped by class, so Keras' validation_split
     # would take a non-representative tail slice. Use an explicit stratified split.
@@ -302,6 +311,8 @@ def main():
     print(f"-- train/val split: {len(x_train_fit)} train samples, {len(x_val)} val samples")
 
     model: keras.Model
+    
+    # TODO: train a CNN model on 240x240 images and save it
 
     # Build or load
     if args.load_model and os.path.isfile(args.load_model):
@@ -349,8 +360,6 @@ def main():
     # Train
     history: History|None = None
     if not trained:
-
-
         print(f"-- training model for '{args.mode}/{args.subject}'...")
         train_start_datetime = datetime.now()
 
@@ -383,6 +392,8 @@ def main():
         print(f"-- training complete.")
         print(f"-- training duration: {training_duration}")
 
+    model.summary()
+    
     # Evaluate
     test_start = datetime.now()
     logits = model.predict(x_test, verbose=0)
