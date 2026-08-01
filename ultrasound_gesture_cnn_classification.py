@@ -221,20 +221,20 @@ def main():
     
     default_subject_id: str = "4"
     default_mode: str = "perp" # ["perp", "mirror"]
-    default_image_size: int = 240 # was 320. Source images are 640x640, but these take a long time to process
-    default_epochs: int = 10 # 200 to 0.9558 accuracy
+    default_image_size: int = 224 # 240 # was 320. Source images are 640x640, but these take a long time to process
+    default_epochs: int = 50 # 200 to 0.9558 accuracy
     default_batch_size: int = 64
-    default_explain_method: str = "GradCAM" #
+    default_explain_method: str = "" # ["", "GradCAM"]
     default_filters: list[int] = [16,16,16,16,16]
     default_dense_units: int = 64
     default_progress: str = "none" # ["tqdm", "none"]
     default_learning_rate: float = 1e-5 # 5e-5 # default 1e-3
     default_dropout_rate: float = 0.5
     # empty string for save or load model will skip save or load
-    # default_save_model: str = f"results/models/cnn/cnn_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.keras"
-    default_save_model: str = ""
-    default_load_model: str = f"results/models/cnn/cnn_perp_subject_4_200_epochs_20260719_133931.keras"
-    # default_load_model: str = ""
+    default_save_model: str = f"results/models/cnn/cnn_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{default_image_size}px_{file_datetime}.keras"
+    # default_save_model: str = ""
+    # default_load_model: str = f"results/models/cnn/cnn_perp_subject_4_200_epochs_20260719_133931.keras"
+    default_load_model: str = ""
     default_metrics_filepath: str = f"results/metrics/cnn/metrics_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.json"
     default_confusion_matrix_filepath: str = f"results/figs/cnn/cm_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
     
