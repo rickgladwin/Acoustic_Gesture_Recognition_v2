@@ -4,6 +4,7 @@ import os
 import json
 import argparse
 from datetime import datetime
+from symtable import Function
 
 import numpy as np
 import pandas as pd
@@ -120,6 +121,8 @@ class TqdmProgress(keras.callbacks.Callback):
 # ============================
 # ViT building blocks
 # ============================
+# register this custom layer class with a decorator so that it can be deserialized if a saved .keras copy of the model is loaded
+@keras.saving.register_keras_serializable()
 class Patches(keras.layers.Layer):
     """Split the input image into non-overlapping patches."""
     # TODO: ** add attention biasing layer
@@ -147,6 +150,7 @@ class Patches(keras.layers.Layer):
         batch = tf.shape(patches)[0]
         return tf.reshape(patches, [batch, -1, patches.shape[-1]])
 
+@keras.saving.register_keras_serializable()
 class PatchEncoder(keras.layers.Layer):
     """Linear projection + learnable positional embeddings."""
     def __init__(self, num_patches, projection_dim):
@@ -182,12 +186,29 @@ def build_vit_with_attention_output(input_shape, num_classes,
     patches = Patches(patch_size)(inputs)
     encoded = PatchEncoder(num_patches, projection_dim)(patches)
 
-    for _ in range(transformer_layers):
+    # Initialize a variable to store the final attention map
+    final_attention_scores = None
+
+    for i in range(transformer_layers):
         x1 = keras.layers.LayerNormalization(epsilon=1e-6)(encoded)
-        attn = keras.layers.MultiHeadAttention(
-            num_heads=num_heads, key_dim=projection_dim, dropout=0.1, return_attention_scores=True
-        )(x1, x1)
-        x2 = keras.layers.Add()([attn, encoded])
+        # TODO: pass an argument for attention_mask to MultiHeadAttention
+        # Instantiate the MHA layer
+        attn_layer = keras.layers.MultiHeadAttention(
+            num_heads=num_heads, key_dim=projection_dim, dropout=0.1
+        )
+
+        # Determine if we are on the final transformer block
+        is_final_layer = (i == transformer_layers - 1)
+
+        # Call MHA and conditionally fetch attention scores
+        if is_final_layer:
+            attn_output, final_attention_scores = attn_layer(
+                query=x1, value=x1, return_attention_scores=True
+            )
+        else:
+            attn_output = attn_layer(query=x1, value=x1, return_attention_scores=False)
+
+        x2 = keras.layers.Add()([attn_output, encoded])
         x3 = keras.layers.LayerNormalization(epsilon=1e-6)(x2)
         x3 = mlp(x3, hidden_units=transformer_units, dropout_rate=0.1)
         encoded = keras.layers.Add()([x3, x2])
@@ -207,11 +228,16 @@ def build_vit_with_attention_output(input_shape, num_classes,
     features = mlp(representation, hidden_units=mlp_head_units, dropout_rate=0.5)
     logits = keras.layers.Dense(num_classes)(features)
 
-    model = keras.Model(inputs=inputs, outputs=logits)
+    model = keras.Model(inputs=inputs, outputs=[logits, final_attention_scores])
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
-        loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
-        metrics=[keras.metrics.SparseCategoricalAccuracy(name="accuracy")],
+        # loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+        # metrics=[keras.metrics.SparseCategoricalAccuracy(name="accuracy")],
+
+        # Use a list of losses matching the order of outputs.
+        # final_attention_scores does not need a loss, so we pass None.
+        loss=[keras.losses.SparseCategoricalCrossentropy(from_logits=True), None],
+        metrics={model.output_names[0]: keras.metrics.SparseCategoricalAccuracy(name="accuracy")},
     )
     return model
 
@@ -220,6 +246,7 @@ def get_vit_attention_model(existing_model):
     """
     Extract attention scores from a ViT model.
     Modified version of code from Google Gemini 3 (2026)
+    'how to get the attention maps for all layers from an existing vision transformer in tensorflow'
     """
     # Find all attention score output tensors across the ViT layers
     attention_outputs = []
@@ -252,7 +279,7 @@ def build_vit(input_shape, num_classes,
     for _ in range(transformer_layers):
         x1 = keras.layers.LayerNormalization(epsilon=1e-6)(encoded)
         attn = keras.layers.MultiHeadAttention(
-            num_heads=num_heads, key_dim=projection_dim, dropout=0.1
+            num_heads=num_heads, key_dim=projection_dim, dropout=0.1,
         )(x1, x1)
         x2 = keras.layers.Add()([attn, encoded])
         x3 = keras.layers.LayerNormalization(epsilon=1e-6)(x2)
@@ -324,6 +351,78 @@ def load_subject_arrays(root, mode, subject, image_size):
     return (x_train, y_train), (x_test, y_test), num_classes
 
 
+import numpy as np
+import matplotlib.pyplot as plt
+import cv2
+
+
+def plot_attention_map(model, image, patch_size=32):
+    # code extracted from Google Gemini 3 (2026)
+    """
+    Extracts attention scores, averages heads, and overlays a heatmap on the image.
+
+    Args:
+        model: The trained multi-output ViT model.
+        image: A single numpy image array of shape (H, W, C).
+        patch_size: The patch size used during model compilation.
+    """
+    print(f"image.shape: {image.shape}")
+    # 1. Prepare image for prediction (add batch dimension: 1, H, W, C)
+    input_tensor = np.expand_dims(image, axis=0)
+    print(f"input_tensor.shape: {input_tensor.shape}")
+
+    # 2. Extract outputs (logits and final attention scores)
+    _, attention_scores = model.predict(input_tensor)
+
+    # Shape of attention_scores is (batch, heads, target_seq_len, source_seq_len)
+    # For self-attention, seq_len = num_patches
+    attention_scores = attention_scores[0]  # Drop batch dimension -> (heads, num_patches, num_patches)
+
+    # 3. Average across all attention heads
+    avg_attention = np.mean(attention_scores, axis=0)  # Shape: (num_patches, num_patches)
+
+    # 4. Collapse to a 1D attention weight per patch (sum or mean over source patches)
+    # This represents how much each patch is attended to overall
+    patch_weights = np.mean(avg_attention, axis=0)  # Shape: (num_patches,)
+    print(f"patch_weights.shape: {patch_weights.shape}")
+
+    # 5. Reshape the 1D patch weights back into the 2D grid spatial layout
+    h, w, _ = image.shape
+    grid_size = h // patch_size
+    heatmap = patch_weights.reshape((grid_size, grid_size))
+    print(f"heatmap.shape: {heatmap.shape}")
+    print(f"heatmap.dtype: {heatmap.dtype}")
+    print(f"(w, h): ({w, h})")
+    # plt.imshow(heatmap, cmap="viridis")
+    # plt.show()
+
+    # convert data type for heatmap for compatibility with cv2.resize
+    heatmap = heatmap.astype("float32")
+
+    # 6. Resize heatmap to match original image dimensions using cubic interpolation
+    heatmap = cv2.resize(heatmap, (w, h), interpolation=cv2.INTER_CUBIC)
+
+    # 7. Normalize heatmap values strictly between 0 and 1 for clean rendering
+    heatmap = (heatmap - np.min(heatmap)) / (np.max(heatmap) - np.min(heatmap) + 1e-8)
+
+    # 8. Render the plot side-by-side: Original vs. Overlayed Heatmap
+    plt.figure(figsize=(10, 5))
+
+    plt.subplot(1, 2, 1)
+    plt.imshow(image.astype("uint8") if image.max() > 1 else image, cmap="gray")
+    plt.title("Original Image")
+    plt.axis("off")
+
+    plt.subplot(1, 2, 2)
+    plt.imshow(image.astype("uint8") if image.max() > 1 else image, vmin=0, vmax=1)
+    # Overlay the heatmap using a semi-transparent jet colormap
+    plt.imshow(heatmap, cmap="jet", alpha=0.4)
+    plt.title("Attention Heatmap")
+    plt.axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
 
 # ============================
 # Main
@@ -331,6 +430,14 @@ def load_subject_arrays(root, mode, subject, image_size):
 def main():
     # TODO: ** find additional ViT examples (with attention biasing)
     # TODO: ** find any ultrasound ViT examples (with or without attention biasing)
+
+    # TODO: extract attention maps for comparison with CNN attribution maps
+
+    # TODO: research TOAST (TOp-down Attention STeering), a transfer learning method
+    #  that uses attention steering to improve accuracy, from Shi et al. (2023)
+
+    # TODO: read Vision Transformers Need Registers from Darcet et al. (2023), regarding
+    #  a technique to focus and improve accuracy of attention maps in ViTs.
     
     # MPS for pytorch
     # confirm that an accelerator device is available (we expect
@@ -381,7 +488,7 @@ def main():
 
     default_mode: str = "perp" # ["perp", "mirror"]
     default_subject_id: str = "4"
-    default_epochs: int = 250 # paper used 500 (?)
+    default_epochs: int = 1 # paper used 500 (?)
     default_image_size: int = 320 # was 320, raw image is 640
     default_progress: str = "none" # ["tqdm", "none"]
     default_learning_rate: float = 0.0005
@@ -393,11 +500,19 @@ def main():
     default_projection_dim: int = 64
     default_dense_units: int = 2048
 
+    # selects a model builder function that outputs attention from the MultiheadAttention layer
+    # or uses the build_vit function without attention output
+    default_output_attention_maps: bool = True
+
     # empty string for save or load model will skip save or load
-    default_save_model: str = f"results/models/vit/vit_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.keras"
-    # default_save_model: str = ""
+    # default_save_model: str = f"results/models/vit/vit_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{default_image_size}px_{file_datetime}.keras"
+    default_save_model: str = ""
     # default_load_model: str = f"results/models/vit/vit_perp_subject_2_1_epochs_20260717_191619.keras"
-    default_load_model: str = ""
+    # default_load_model: str = f"results/models/vit/vit_perp_subject_4_1_epochs_20260802_132156.keras"
+    # default_load_model = f"results/models/vit/vit_perp_subject_4_1_epochs_320px_20260802_133434.keras"
+    # default_load_model: str = f"results/models/vit/vit_perp_subject_4_1_epochs_320px_20260802_134208.keras"
+    default_load_model: str = f"results/models/vit/vit_perp_subject_4_1_epochs_320px_20260802_181936.keras"
+    # default_load_model: str = ""
 
     default_metrics_filepath: str = f"results/metrics/vit/metrics_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.json"
     default_confusion_matrix_filepath: str = f"results/figs/vit/cm_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
@@ -438,6 +553,7 @@ def main():
     file_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
     parser.add_argument("--out", type=str, default=default_metrics_filepath, help="Path to save metrics JSON, e.g., results/subject1_vit.json")
     parser.add_argument("--cm", type=str, default=default_confusion_matrix_filepath, help="Path to save confusion matrix PNG, e.g., results/figs/subject1_vit_cm.png")
+    parser.add_argument("--output-attention-maps", type=bool, default=default_output_attention_maps, help="Whether to output attention maps when the model is built")
 
     args = parser.parse_args()
     set_seed(args.seed)
@@ -450,6 +566,37 @@ def main():
     print(f"-- loaded {len(x_train)} training samples and {len(x_test)} test samples for {num_classes} classes")
     input_shape = (args.image_size, args.image_size, 1)
     print(f"-- input shape: {input_shape}")
+
+    # load a single test image tensor for attention mapping
+    # gesture class index (0-11) and class shortnames
+    # IndPinch is used as the first test in the CNN attribution mapping,
+    # class index 4, sample index 410
+    # from sample images image_source_file = "/Users/rickgladwin/Code/u_of_hull/dissertation/bimbraw_2025_dataset/data/perp/Subject_4/X_m_test.npy"
+    gesture_class_index_and_shortnames: list[tuple[int, str]] = [
+        (0, "IndFlex"),
+        (1, "MidFlex"),
+        (2, "RinFlex"),
+        (3, "PinFlex"),
+        (4, "IndPinch"),
+        (5, "IndMidPinch"),
+        (6, "IndMidRinPinch"),
+        (7, "AllPinch"),
+        (8, "MidRinPinch"),
+        (9, "Fist"),
+        (10, "Hook"),
+        (11, "Open"),
+    ]
+
+    print(f"x_test shape: {x_test.shape}")
+
+    # get single test sample image
+    test_image_tensor = x_test[410]
+    # plt.figure(figsize=(10, 10))
+    # plt.imshow(test_image_tensor, cmap="gray")
+    # plt.tight_layout()
+    # plt.show()
+
+    # exit(0)
 
     # The raw training arrays are grouped by class, so Keras' validation_split
     # would take a non-representative tail slice. Use an explicit stratified split.
@@ -465,19 +612,30 @@ def main():
     
     model: keras.Model
 
+    model_builder_function = build_vit_with_attention_output if args.output_attention_maps else build_vit
+
     # Build or load model
     if args.load_model and os.path.isfile(args.load_model):
         print(f"Loading model from: {args.load_model}")
-        model = keras.models.load_model(args.load_model, compile=False)
+        # model = keras.models.load_model(args.load_model, compile=False)
+        model = keras.models.load_model(
+            args.load_model,
+            compile=False,
+            # fix error: TypeError: Cannot deserialize object of type `Patches`. If `Patches` is a custom class, please register it using the `@keras.saving.register_keras_serializable()` decorator.
+            # because Patches is a custom class
+            custom_objects={'Patches': Patches, 'PatchEncoder': PatchEncoder}
+        )
         model.compile(
             # optimizer=keras.optimizers.Adam(learning_rate=1e-3),
-            optimizer=keras.optimizers.legacy.Adam(learning_rate=1e-3),
+            optimizer=keras.optimizers.legacy.Adam(learning_rate=args.lr),
             loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
             metrics=[keras.metrics.SparseCategoricalAccuracy(name='accuracy')],
+
         )
         trained = True
     else:
-        model = build_vit(
+        # TODO: ** use build_vit_with_attention_model based on a config argument
+        model = model_builder_function(
             input_shape=input_shape,
             num_classes=num_classes,
             patch_size=default_patch_size, # was 32
@@ -537,13 +695,37 @@ def main():
         # TODO: add title and run details to these functions as arguments
         # plot_history_separately(history, details=training_details)
         # plot_history_together(history)
-    
+
+    # extract attention maps
+    # if args.output_attention_maps:
+        ## Instantiate the extraction model
+        # attn_extraction_model = get_vit_attention_model(model)
+
+        # Inference
+        # FIXME: error when calling attn_extraction_model():
+        # {{function_node __wrapped__AddV2_device_/job:localhost/replica:0/task:0/device:GPU:0}} Incompatible shapes: [320,0,64] vs. [100,64] [Op:AddV2] name:
+        #
+        # Call arguments received by layer 'patch_encoder' (type PatchEncoder):
+        #   • patch=tf.Tensor(shape=(320, 0, 1024), dtype=float16)
+
+        # DISABLED
+        # outputs = attn_extraction_model(test_image_tensor, training=False)
+        # attention_maps = outputs['attentions']  # List of tensors: [batch, heads, tokens, tokens]
+        #
+        # print(f"attention_maps.shape: {attention_maps.shape}")
+        #
+        # Average across attention heads for layer 0
+        # layer_0_attn = tf.reduce_mean(attention_maps[0], axis=1)
+        #
+        # print(f"layer_0_attn.shape: {layer_0_attn.shape}")
+        # END DISABLED
+
     # Evaluate on test
     # logits = model.predict(x_test, verbose=0)
     # y_pred = np.argmax(logits, axis=1)
 
     test_start = datetime.now()
-    logits = model.predict(x_test, verbose=0)
+    [logits, attention_scores] = model.predict(x_test, verbose=0)
     y_pred = np.argmax(logits, axis=1)
     test_end = datetime.now()
     test_duration = train_test_duration_display(test_end - test_start)
@@ -570,8 +752,6 @@ def main():
 
             training_details['test_accuracy'] = f"{acc:.4f}"
 
-        print(f"plotting training history...")
-
         loss_title: str = "ViT Model Loss Over Epochs"
         accuracy_title: str = "ViT Model Accuracy Over Epochs"
 
@@ -583,9 +763,15 @@ def main():
 
         print(f"plotting training history...")
 
-        plot_history_separately(training_history=history, loss_plot_title=loss_title, acc_plot_title=accuracy_title, details=training_details, save_plots=True, plot_filename=history_plot_filename)
+        print(f"plotting history: {history}")
+
+        # plot_history_separately(training_history=history, loss_plot_title=loss_title, acc_plot_title=accuracy_title, details=training_details, save_plots=True, plot_filename=history_plot_filename)
         # plot_history_together(history)
         print(f"Saved training history plots to: {history_plot_filename}")
+
+    print(f"plotting attention map...")
+    plot_attention_map(model, test_image_tensor, patch_size=32)
+    print(f"done plotting attention map")
 
     # Save CM and model/metrics if requested
     if args.cm:
@@ -650,3 +836,11 @@ if __name__ == "__main__":
     # example command:
     # python3.10 ultrasound_gesture_vit_classification.py --mode perp --subject Subject_1 --epochs 2 --batch-size 64 --save-model results/vit_mirror_subject1.keras --out results/subject1_vit_mirror.json --cm results/figs/subject1_vit_mirror_cm.png
     main()
+
+# References
+# Shi, B., Gai, S., Darrell, T. & Wang, X. (2023) Toast: Transfer learning via attention steering. arXiv:2305.15542. https://ui.adsabs.harvard.edu/abs/2023arXiv230515542S [Accessed May 01, 2023].
+#
+# Darcet, T., Oquab, M., Mairal, J. & Bojanowski, P. (2023) Vision transformers need registers. arXiv e-prints, arXiv:2309.16588. https://doi.org/10.48550/arXiv.2309.16588
+#
+# Google Gemini 3 (2026) "Yes please provide an example snippet demonstrating how to format and average the multi-head attention scores to plot a clean heatmap over the input image." (mid-chat prompt) [LLM chat]. 2026–08–02 5:32 PM EDT.
+
