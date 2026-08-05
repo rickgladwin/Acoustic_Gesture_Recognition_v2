@@ -222,7 +222,7 @@ def main():
     default_subject_id: str = "4"
     default_mode: str = "perp" # ["perp", "mirror"]
     default_image_size: int = 224 # 240 # was 320. Source images are 640x640, but these take a long time to process
-    default_epochs: int = 50 # 200 to 0.9558 accuracy
+    default_epochs: int = 2 # 200 to 0.9558 accuracy
     default_batch_size: int = 64
     default_explain_method: str = "" # ["", "GradCAM"]
     default_filters: list[int] = [16,16,16,16,16]
@@ -359,6 +359,8 @@ def main():
     
     # Train
     history: History|None = None
+    val_acc_key: str|None = None
+    train_acc_key: str|None = None
     if not trained:
         print(f"-- training model for '{args.mode}/{args.subject}'...")
         train_start_datetime = datetime.now()
@@ -377,14 +379,16 @@ def main():
         train_end_datetime = datetime.now()
         training_duration = train_test_duration_display(train_end_datetime - train_start_datetime)
         training_details['training_duration'] = training_duration
-        
+
+        print(f"history.history.keys(): {history.history.keys()}")
         # TODO: add max validation accuracy and max validation accuracy epoch to training details
         # TODO: add this in all relevant places
 
         # Note: Use 'acc' instead of 'accuracy' if you are using an older Keras version
-        acc_key = 'accuracy' if 'accuracy' in history.history else 'acc'
-        max_validation_acc = max(history.history[acc_key])
-        max_validation_acc_epoch = history.history[acc_key].index(max_validation_acc) + 1
+        train_acc_key = 'accuracy' if 'accuracy' in history.history else 'acc'
+        val_acc_key = 'val_accuracy' if 'accuracy' in history.history else 'val_acc'
+        max_validation_acc: float = max(history.history[val_acc_key])
+        max_validation_acc_epoch: int = history.history[val_acc_key].index(max_validation_acc) + 1
     
         training_details['max_val_acc'] = f"{max_validation_acc:.4f}"
         training_details['max_val_acc_epoch'] = max_validation_acc_epoch
@@ -432,10 +436,9 @@ def main():
         # (don't use decimal point)
         learning_rate_string: str = f"{args.lr:.2e}"
         learning_rate_string = learning_rate_string.replace(".", "p")
-        history_plot_filename: str = f"results/figs/cnn/history_cnn_{args.epochs}_epochs_{learning_rate_string}_lr_{file_datetime}"
+        history_plot_filename: str = f"results/figs/cnn/history_cnn_subject_{default_subject_id}_{args.epochs}_epochs_{learning_rate_string}_lr_{file_datetime}"
 
-        acc_key = 'accuracy' if 'accuracy' in history.history else 'acc'
-        plot_history_separately(training_history=history, loss_plot_title=loss_title, acc_plot_title=accuracy_title, details=training_details, save_plots=True, plot_filename=history_plot_filename, acc_key=acc_key)
+        plot_history_separately(training_history=history, loss_plot_title=loss_title, acc_plot_title=accuracy_title, details=training_details, save_plots=True, plot_filename=history_plot_filename, val_acc_key=val_acc_key, train_acc_key=train_acc_key)
         # plot_history_together(history)
         print(f"Saved training history plots to: {history_plot_filename}")
 

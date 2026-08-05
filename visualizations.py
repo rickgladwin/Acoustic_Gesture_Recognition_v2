@@ -119,7 +119,7 @@ def set_global_matplotlib_font(font_family_cascade: list[str]|None=None, default
     plt.rcParams['font.family'] = selected_font
 
 
-def plot_history_separately(training_history: History, loss_plot_title: str|None=None, acc_plot_title: str|None=None, details: dict|None=None, save_plots: bool=False, plot_filename: str|None=None, acc_key: str='acc'):
+def plot_history_separately(training_history: History, loss_plot_title: str|None=None, acc_plot_title: str|None=None, details: dict|None=None, save_plots: bool=False, plot_filename: str|None=None, val_acc_key: str|None=None, train_acc_key: str|None=None):
     """
     Creates side-by-side subplots to display the loss and accuracy history over
     epochs for both training and validation datasets. Training details and plot titles can be added.
@@ -136,6 +136,8 @@ def plot_history_separately(training_history: History, loss_plot_title: str|None
         save_plots (bool): If True, saves the generated plots to a file. If False, displays the plots.
         plot_filename (str | None): Filename for saving the plots. If None and save_plots 
             is True, a default filename is used. Ignored if save_plots is False.
+        val_acc_key (str | None): Optional key for the validation accuracy metric in the training history. 
+        train_acc_key (str | None): Optional key for the training accuracy metric in the training history. 
 
     Raises:
         KeyError: Raised if expected keys like 'loss', 'val_loss', 'accuracy', or 'val_accuracy'
@@ -158,11 +160,13 @@ def plot_history_separately(training_history: History, loss_plot_title: str|None
         caption = ""
 
     # Plot Training & Validation Loss
+    # for ViT with attention output:
+    # history.history.keys(): dict_keys(['loss', 'dense_19_loss', 'dense_19_accuracy', 'val_loss', 'val_dense_19_loss', 'val_dense_19_accuracy'])
     loss_title: str = loss_plot_title if loss_plot_title is not None else 'Model Loss Over Epochs'
 
-    ax1.plot(training_history.history['loss'], label='Train Loss', color='blue', linewidth=2)
+    ax1.plot(training_history.history['loss'], label='Train Loss', color='blue', linewidth=1)
     if 'val_loss' in training_history.history:
-        ax1.plot(training_history.history['val_loss'], label='Val Loss', color='orange', linestyle='-', linewidth=2)
+        ax1.plot(training_history.history['val_loss'], label='Val Loss', color='orange', linestyle='-', linewidth=1.5)
     ax1.set_title(loss_title)
     # adding the caption to the X label is the simplest way to display it
     ax1.set_xlabel(f'Epochs\n\n{caption}', fontdict={'size': caption_font_size})
@@ -176,11 +180,25 @@ def plot_history_separately(training_history: History, loss_plot_title: str|None
     # Note: Use 'acc' instead of 'accuracy' if you are using an older Keras version
     # accuracy key will be sent in the arguments
     # acc_key = 'accuracy' if 'accuracy' in training_history.history else 'acc'
-    ax2.plot(training_history.history[acc_key], label='Train Accuracy', color='blue', linewidth=2)
-
-    val_acc_key = 'val_' + acc_key
-    if val_acc_key in training_history.history:
-        ax2.plot(training_history.history[val_acc_key], label='Val Accuracy', color='orange', linestyle='-', linewidth=2)
+    if train_acc_key is not None:
+        training_acc_key = train_acc_key
+    elif 'accuracy' in training_history.history:
+        training_acc_key = 'accuracy'
+    else:
+        training_acc_key = 'acc'
+    
+    if training_acc_key in training_history.history:
+        ax2.plot(training_history.history[training_acc_key], label='Train Accuracy', color='blue', linewidth=1)
+    
+    if val_acc_key is not None:
+        validation_acc_key = val_acc_key
+    elif 'accuracy' in training_history.history:
+        validation_acc_key = 'val_accuracy'
+    else:
+        validation_acc_key = 'val_acc'
+    
+    if validation_acc_key in training_history.history:
+        ax2.plot(training_history.history[validation_acc_key], label='Val Accuracy', color='orange', linestyle='-', linewidth=1.5)
     ax2.set_title(acc_title)
     # ax2.set_xlabel(f'Epochs\n\n{caption}')
     ax2.set_xlabel(f'Epochs\n\n{caption}', fontdict={'size': caption_font_size})

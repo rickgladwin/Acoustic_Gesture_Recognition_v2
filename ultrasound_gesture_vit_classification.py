@@ -21,6 +21,16 @@ import matplotlib.font_manager as fm
 # see https://share.google/aimode/UwSqy8Wxk8WaXGWHX
 from tensorflow.keras import mixed_precision
 
+# prevent metal optimizer takeover from keras (version 2.13.1 uses has bugs)
+# from keras.src.optimizers import __init__ as keras_init
+
+# Monkey-patch the Apple Silicon conversion function to stop it from corrupting your optimizer
+# if hasattr(keras_init, "_get_apple_silicon_optimizer"):
+#     keras_init._get_apple_silicon_optimizer = lambda optimizer: optimizer
+# elif hasattr(tf.keras.optimizers, "_get_apple_silicon_optimizer"):
+#     tf.keras.optimizers._get_apple_silicon_optimizer = lambda optimizer: optimizer
+# end prevent metal optimizer takeover from keras
+
 from ultrasound_gesture_cnn_classification import train_test_duration_display, is_apple_silicon, get_mac_system_info
 from utilities import ensure_dir, set_seed, dump_json, process_pool_size
 from visualizations import create_caption_from_details, plot_history_separately, save_confusion_matrix_png, set_global_matplotlib_font
@@ -31,6 +41,10 @@ from visualizations import create_caption_from_details, plot_history_separately,
 # ** check and see what the impact is on accuracy
 policy = mixed_precision.Policy('mixed_float16')
 mixed_precision.set_global_policy(policy)
+
+# use mixed_bfloat16 policy for compatibility with Lion optimizer and (buggy) LossScaleOptimizer wrapper
+# tf.keras.mixed_precision.set_global_policy('mixed_bfloat16')
+
 
 # Progress bar (console "trackbar")
 from tqdm.auto import tqdm
@@ -171,14 +185,33 @@ def mlp(x, hidden_units, dropout_rate):
         x = keras.layers.Dropout(dropout_rate)(x)
     return x
 
+# try to get around the Lion bug in keras 2.13.1
+# 1. Create a lightweight wrapper to bypass the Mac backend check
+class MacCompatibleLion(tf.keras.optimizers.Optimizer):
+    def __init__(self, **kwargs):
+        # Pass configuration directly to the underlying real Lion optimizer
+        self._underlying_optimizer = tf.keras.optimizers.Lion(**kwargs)
+        super().__init__(name="MacCompatibleLion")
+
+    def minimize(self, loss, var_list, tape=None):
+        # Forward the minimize call safely past the string-interceptor
+        return self._underlying_optimizer.minimize(loss, var_list, tape=tape)
+
+    def apply_gradients(self, grads_and_vars, name=None):
+        return self._underlying_optimizer.apply_gradients(grads_and_vars, name=name)
+
+
 def build_vit_with_attention_output(input_shape, num_classes,
               patch_size=32, projection_dim=64, num_heads=8,
               transformer_layers=6, transformer_units=(128, 64),
-              mlp_head_units=(512, 256), learning_rate: float=1e-3) -> keras.Model:
+              mlp_head_units=(512, 256), learning_rate: float=1e-3,
+              weight_decay: float=0.1, 
+              beta_1: float=0.9, beta_2: float=0.99) -> keras.Model:
     """
     Build a compact ViT classifier (no CLS token; flatten + MLP head).
     Provide attention information for visualizing and using attention maps.
     """
+    # TODO: add a CLS token for attention visualization?
     h, w, _ = input_shape
     num_patches = (h // patch_size) * (w // patch_size)
 
@@ -229,8 +262,37 @@ def build_vit_with_attention_output(input_shape, num_classes,
     logits = keras.layers.Dense(num_classes)(features)
 
     model = keras.Model(inputs=inputs, outputs=[logits, final_attention_scores])
+    model_optimizer: keras.optimizers.Optimizer = tf.keras.optimizers.Lion(
+    # model_optimizer: keras.optimizers.Optimizer = MacCompatibleLion(
+    # raw_model_optimizer = tf.keras.optimizers.Lion(
+        learning_rate=learning_rate,
+        weight_decay=weight_decay,
+        beta_1=beta_1,
+        beta_2=beta_2,
+    )
+    
+    # model_optimizer: tf.keras.optimizers.Optimizer = tf.keras.optimizers.AdamW(
+    model_optimizer: tf.keras.optimizers.Optimizer = tf.keras.optimizers.Adam(
+        learning_rate=learning_rate,
+        weight_decay=weight_decay, 
+    )
+
+    # model_optimizer = tf.keras.mixed_precision.legacy.LossScaleOptimizer(
+    #     tf.keras.optimizers.Lion(
+    #         learning_rate=learning_rate,
+    #         weight_decay=weight_decay,
+    #         beta_1=beta_1,
+    #         beta_2=beta_2,
+    #     )
+    # )
+    # model_optimizer = tf.keras.mixed_precision.LossScaleOptimizer(raw_model_optimizer)
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
+        # orig
+        # optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
+        # fixes slowdown on Mac silicon
+        # optimizer=keras.optimizers.legacy.Adam(learning_rate=learning_rate),
+        # faster on M4 Max for ViT
+        optimizer=model_optimizer,
         # loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
         # metrics=[keras.metrics.SparseCategoricalAccuracy(name="accuracy")],
 
@@ -303,7 +365,8 @@ def build_vit(input_shape, num_classes,
 
     model = keras.Model(inputs=inputs, outputs=logits)
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
+        # optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
+        optimizer=keras.optimizers.legacy.Adam(learning_rate=learning_rate),
         loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
         metrics=[keras.metrics.SparseCategoricalAccuracy(name="accuracy")],
     )
@@ -547,12 +610,17 @@ def main():
     file_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     default_mode: str = "perp" # ["perp", "mirror"]
-    default_subject_id: str = "4" # IndPinch
-    default_epochs: int = 500 # paper used 500 (?)
+    # default_subject_id: str = "6" # pending
+    # default_subject_id: str = "5" # pending
+    # default_subject_id: str = "4" # done
+    # default_subject_id: str = "3" # done (redo history plot)
+    # default_subject_id: str = "2" # done (redo history plot)
+    default_subject_id: str = "1" #
+    default_epochs: int = 2 # paper used 500 (?)
     default_image_size: int = 320 # was 320, raw image is 640
     default_progress: str = "none" # ["tqdm", "none"]
-    default_learning_rate: float = 0.0005
-    default_weight_decay: float = 0.0001
+    default_learning_rate: float = 0.0001 # was 0.0005
+    default_weight_decay: float = 0.001 # was 0.0001
     default_batch_size: int = 256 # was 256 (larger batch sizes are required for ViTs in order to saturate the GPU)
     default_patch_size: int = 32 # was 32, 320/16 = 20 (took several minutes and never finished the first iteration)
     default_num_heads: int = 16
@@ -708,6 +776,7 @@ def main():
             transformer_units=(128, 64),
             mlp_head_units=(512, 256),
             learning_rate=default_learning_rate,
+            weight_decay=default_weight_decay,
         )
         trained = False
 
@@ -836,15 +905,16 @@ def main():
         # (don't use decimal point)
         learning_rate_string: str = f"{args.lr:.2e}"
         learning_rate_string = learning_rate_string.replace(".", "p")
-        history_plot_filename: str = f"results/figs/vit/history_vit_{args.epochs}_epochs_{learning_rate_string}_lr_{file_datetime}"
+        history_plot_filename: str = f"results/figs/vit/history_vit_subject_{default_subject_id}_{args.epochs}_epochs_{learning_rate_string}_lr_{file_datetime}"
 
+        train_acc_key = 'dense_19_accuracy'
         acc_key = 'val_dense_19_accuracy'
         
         print(f"plotting training history...")
 
         print(f"plotting history: {history}")
 
-        plot_history_separately(training_history=history, loss_plot_title=loss_title, acc_plot_title=accuracy_title, details=training_details, save_plots=True, plot_filename=history_plot_filename, acc_key=acc_key)
+        plot_history_separately(training_history=history, loss_plot_title=loss_title, acc_plot_title=accuracy_title, details=training_details, save_plots=True, plot_filename=history_plot_filename, val_acc_key=acc_key, train_acc_key=train_acc_key)
         # plot_history_together(history)
         print(f"Saved training history plots to: {history_plot_filename}")
 
