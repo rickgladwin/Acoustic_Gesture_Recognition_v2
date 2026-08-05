@@ -234,6 +234,7 @@ def main():
     default_save_model: str = f"results/models/cnn/cnn_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{default_image_size}px_{file_datetime}.keras"
     # default_save_model: str = ""
     # default_load_model: str = f"results/models/cnn/cnn_perp_subject_4_200_epochs_20260719_133931.keras"
+    # default_load_model: str = f"results/models/cnn/cnn_perp_subject_4_50_epochs_224px_20260802_215005.keras"
     default_load_model: str = ""
     default_metrics_filepath: str = f"results/metrics/cnn/metrics_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.json"
     default_confusion_matrix_filepath: str = f"results/figs/cnn/cm_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
@@ -401,6 +402,12 @@ def main():
     # Evaluate
     test_start = datetime.now()
     logits = model.predict(x_test, verbose=0)
+
+    print(f"model logits predictions for {len(x_test)} test inputs:")
+    print(f"logits.shape: {logits.shape}")
+    print(f"first 5 logits:")
+    print(logits[:5])
+
     y_pred = np.argmax(logits, axis=1)
     test_end = datetime.now()
     test_duration = train_test_duration_display(test_end - test_start)
