@@ -23,7 +23,7 @@ from tensorflow.keras import mixed_precision
 
 from ultrasound_gesture_cnn_classification import train_test_duration_display, is_apple_silicon, get_mac_system_info
 from utilities import ensure_dir, set_seed, dump_json, process_pool_size
-from visualizations import create_caption_from_details, plot_history_separately, save_confusion_matrix_png
+from visualizations import create_caption_from_details, plot_history_separately, save_confusion_matrix_png, set_global_matplotlib_font
 
 # Enable mixed float16 precision (mat default to float32 for all operations otherwise)
 # this changed the time per epoch from apx 1m14s to apx 43s
@@ -356,8 +356,8 @@ import matplotlib.pyplot as plt
 import cv2
 
 
-def plot_attention_map(model, image, patch_size=32):
-    # code extracted from Google Gemini 3 (2026)
+def plot_attention_map(model, image, patch_size=32, details: dict|None=None, save_plots=True, plot_filename=None, heatmap_cmap: str="jet"):
+    # modified from code extracted from Google Gemini 3 (2026)
     """
     Extracts attention scores, averages heads, and overlays a heatmap on the image.
 
@@ -366,7 +366,25 @@ def plot_attention_map(model, image, patch_size=32):
         image: A single numpy image array of shape (H, W, C).
         patch_size: The patch size used during model compilation.
     """
+    
+    set_global_matplotlib_font()
+    caption_font_size: int = 8
+    
+    # pixels to inches
+    # Define the scaling factor (1 pixel in inches)
+    fig_dpi = plt.rcParams['figure.dpi']
+    px = 1 / fig_dpi
+    print(f"fig_dpi: {fig_dpi}")
+    
+    # set overlay alphas
+    heatmap_alpha_low: float = 0.35
+    heatmap_alpha_high: float = 0.60
+
+    # Create an exact 800x600 pixel canvas
+    fig, ax = plt.subplots(figsize=(800 * px, 600 * px))
+
     print(f"image.shape: {image.shape}")
+    
     # 1. Prepare image for prediction (add batch dimension: 1, H, W, C)
     input_tensor = np.expand_dims(image, axis=0)
     print(f"input_tensor.shape: {input_tensor.shape}")
@@ -405,23 +423,65 @@ def plot_attention_map(model, image, patch_size=32):
     # 7. Normalize heatmap values strictly between 0 and 1 for clean rendering
     heatmap = (heatmap - np.min(heatmap)) / (np.max(heatmap) - np.min(heatmap) + 1e-8)
 
-    # 8. Render the plot side-by-side: Original vs. Overlayed Heatmap
-    plt.figure(figsize=(10, 5))
+    # create plot caption
+    if details is not None:
+        caption = create_caption_from_details(details)
+    else:
+        caption = ""
 
-    plt.subplot(1, 2, 1)
+    # 8. Render the plot side-by-side: Original vs. Overlaid Heatmap
+    plt.figure(figsize=(10, 10))
+
+    # subplot(nrows, ncols, index)
+    # where index is 1-based and increases left-to-right, top-to-bottom
+    # 1 2
+    # 3 4
+    # plt.subplot(2, 2, 1)
+    plt.subplot(3, 2, 1)
     plt.imshow(image.astype("uint8") if image.max() > 1 else image, cmap="gray")
     plt.title("Original Image")
     plt.axis("off")
 
-    plt.subplot(1, 2, 2)
-    plt.imshow(image.astype("uint8") if image.max() > 1 else image, vmin=0, vmax=1)
+#     plt.subplot(2, 2, 2)
+    plt.subplot(3, 2, 2)
+    plt.imshow(image.astype("uint8") if image.max() > 1 else image, vmin=0, vmax=1, cmap="gray")
     # Overlay the heatmap using a semi-transparent jet colormap
-    plt.imshow(heatmap, cmap="jet", alpha=0.4)
+    plt.imshow(heatmap, cmap=heatmap_cmap, alpha=heatmap_alpha_low)
+    plt.title(f"Heatmap Overlay (alpha={heatmap_alpha_low:.2f})")
+    plt.axis("off")
+    
+#     plt.subplot(2, 2, 3)
+    plt.subplot(3, 2, 3)
+    plt.imshow(heatmap, cmap=heatmap_cmap)
     plt.title("Attention Heatmap")
     plt.axis("off")
 
+#     plt.subplot(2, 2, 4)
+    plt.subplot(3, 2, 4)
+    plt.imshow(image.astype("uint8") if image.max() > 1 else image, vmin=0, vmax=1, cmap="gray")
+    # Overlay the heatmap using a semi-transparent jet colormap
+    plt.imshow(heatmap, cmap=heatmap_cmap, alpha=heatmap_alpha_high)
+    plt.title(f"Heatmap Overlay (alpha={heatmap_alpha_high:.2f})")
+    # if details is not None:
+    #     plt.xlabel(f'{caption}', fontdict={'size': caption_font_size})
+    plt.axis("off")
+    
+    if details is not None:
+        # plt.subplot(2, 2, 4)
+        plt.subplot(3, 2, 5)
+        plt.title("Details")
+        plt.xlabel(f'{caption}', fontdict={'size': caption_font_size}, labelpad=-2 * fig_dpi)
+    
     plt.tight_layout()
-    plt.show()
+
+    if save_plots:
+        if plot_filename is None:
+            plot_filename = f"attn_?_?_epochs_?_lr_?"
+        print(f"Saving plot to {plot_filename}")
+        plt.savefig(plot_filename, dpi=150)
+        plt.close()
+    else:
+        plt.show()
 
 
 # ============================
@@ -487,8 +547,8 @@ def main():
     file_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     default_mode: str = "perp" # ["perp", "mirror"]
-    default_subject_id: str = "4"
-    default_epochs: int = 1 # paper used 500 (?)
+    default_subject_id: str = "4" # IndPinch
+    default_epochs: int = 500 # paper used 500 (?)
     default_image_size: int = 320 # was 320, raw image is 640
     default_progress: str = "none" # ["tqdm", "none"]
     default_learning_rate: float = 0.0005
@@ -505,17 +565,19 @@ def main():
     default_output_attention_maps: bool = True
 
     # empty string for save or load model will skip save or load
-    # default_save_model: str = f"results/models/vit/vit_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{default_image_size}px_{file_datetime}.keras"
-    default_save_model: str = ""
+    default_save_model: str = f"results/models/vit/vit_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{default_image_size}px_attn_{default_output_attention_maps}_{file_datetime}.keras"
+    # default_save_model: str = ""
     # default_load_model: str = f"results/models/vit/vit_perp_subject_2_1_epochs_20260717_191619.keras"
     # default_load_model: str = f"results/models/vit/vit_perp_subject_4_1_epochs_20260802_132156.keras"
     # default_load_model = f"results/models/vit/vit_perp_subject_4_1_epochs_320px_20260802_133434.keras"
     # default_load_model: str = f"results/models/vit/vit_perp_subject_4_1_epochs_320px_20260802_134208.keras"
-    default_load_model: str = f"results/models/vit/vit_perp_subject_4_1_epochs_320px_20260802_181936.keras"
-    # default_load_model: str = ""
+    # default_load_model: str = f"results/models/vit/vit_perp_subject_4_1_epochs_320px_20260802_181936.keras"
+    # default_load_model: str = f"results/models/vit/vit_perp_subject_4_250_epochs_320px_attn_True_20260802_202144.keras"
+    default_load_model: str = ""
 
     default_metrics_filepath: str = f"results/metrics/vit/metrics_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.json"
     default_confusion_matrix_filepath: str = f"results/figs/vit/cm_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
+    default_attention_map_filepath: str = f"results/figs/vit/attn_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
 
     
     # TODO: include global tensorflow precision setting in training details
@@ -554,6 +616,7 @@ def main():
     parser.add_argument("--out", type=str, default=default_metrics_filepath, help="Path to save metrics JSON, e.g., results/subject1_vit.json")
     parser.add_argument("--cm", type=str, default=default_confusion_matrix_filepath, help="Path to save confusion matrix PNG, e.g., results/figs/subject1_vit_cm.png")
     parser.add_argument("--output-attention-maps", type=bool, default=default_output_attention_maps, help="Whether to output attention maps when the model is built")
+    parser.add_argument("--attn-map", type=str, default=default_attention_map_filepath, help="Path to save attention map PNG, e.g., results/figs/subject1_vit_attn.png")
 
     args = parser.parse_args()
     set_seed(args.seed)
@@ -692,8 +755,22 @@ def main():
         training_details['training_duration'] = training_duration
         print(f"-- training complete.")
         
+        print(f"history.history.keys(): {history.history.keys()}")
+
+        # Note: Use 'acc' instead of 'accuracy' if you are using an older Keras version
+        # Use accuracy key for ViT history
+        # history.history.keys(): dict_keys(['loss', 'dense_19_loss', 'dense_19_accuracy', 'val_loss', 'val_dense_19_loss', 'val_dense_19_accuracy'])
+        
+        acc_key = 'val_dense_19_accuracy'
+        max_validation_acc = max(history.history[acc_key])
+        max_validation_acc_epoch = history.history[acc_key].index(max_validation_acc) + 1
+
+        training_details['max_val_acc'] = f"{max_validation_acc:.4f}"
+        training_details['max_val_acc_epoch'] = max_validation_acc_epoch
+        
         # TODO: add title and run details to these functions as arguments
-        # plot_history_separately(history, details=training_details)
+        # NOTE: plotting this below
+        # plot_history_separately(history, details=training_details, acc_key=acc_key)
         # plot_history_together(history)
 
     # extract attention maps
@@ -761,16 +838,28 @@ def main():
         learning_rate_string = learning_rate_string.replace(".", "p")
         history_plot_filename: str = f"results/figs/vit/history_vit_{args.epochs}_epochs_{learning_rate_string}_lr_{file_datetime}"
 
+        acc_key = 'val_dense_19_accuracy'
+        
         print(f"plotting training history...")
 
         print(f"plotting history: {history}")
 
-        # plot_history_separately(training_history=history, loss_plot_title=loss_title, acc_plot_title=accuracy_title, details=training_details, save_plots=True, plot_filename=history_plot_filename)
+        plot_history_separately(training_history=history, loss_plot_title=loss_title, acc_plot_title=accuracy_title, details=training_details, save_plots=True, plot_filename=history_plot_filename, acc_key=acc_key)
         # plot_history_together(history)
         print(f"Saved training history plots to: {history_plot_filename}")
 
     print(f"plotting attention map...")
-    plot_attention_map(model, test_image_tensor, patch_size=32)
+    # heatmap_colormap = "jet"
+    # heatmap_colormap = "hot"
+    heatmap_colormap = "turbo"
+    # TODO: build attn_plot_details from a loaded model (otherwise details might not match)
+    attn_details: dict = {
+        "mode": training_details
+    }
+    attn_plot_details: dict|None = None
+    if not trained:
+        attn_plot_details = training_details
+    plot_attention_map(model, test_image_tensor, patch_size=32, details=attn_plot_details, save_plots=True, plot_filename=args.attn_map, heatmap_cmap=heatmap_colormap)
     print(f"done plotting attention map")
 
     # Save CM and model/metrics if requested

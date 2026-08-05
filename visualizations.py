@@ -119,7 +119,7 @@ def set_global_matplotlib_font(font_family_cascade: list[str]|None=None, default
     plt.rcParams['font.family'] = selected_font
 
 
-def plot_history_separately(training_history: History, loss_plot_title: str|None=None, acc_plot_title: str|None=None, details: dict|None=None, save_plots: bool=False, plot_filename: str|None=None):
+def plot_history_separately(training_history: History, loss_plot_title: str|None=None, acc_plot_title: str|None=None, details: dict|None=None, save_plots: bool=False, plot_filename: str|None=None, acc_key: str='acc'):
     """
     Creates side-by-side subplots to display the loss and accuracy history over
     epochs for both training and validation datasets. Training details and plot titles can be added.
@@ -174,7 +174,8 @@ def plot_history_separately(training_history: History, loss_plot_title: str|None
     acc_title: str = acc_plot_title if acc_plot_title is not None else 'Model Accuracy Over Epochs'
 
     # Note: Use 'acc' instead of 'accuracy' if you are using an older Keras version
-    acc_key = 'accuracy' if 'accuracy' in training_history.history else 'acc'
+    # accuracy key will be sent in the arguments
+    # acc_key = 'accuracy' if 'accuracy' in training_history.history else 'acc'
     ax2.plot(training_history.history[acc_key], label='Train Accuracy', color='blue', linewidth=2)
 
     val_acc_key = 'val_' + acc_key

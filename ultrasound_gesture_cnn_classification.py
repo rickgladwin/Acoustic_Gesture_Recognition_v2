@@ -441,7 +441,8 @@ def main():
         learning_rate_string = learning_rate_string.replace(".", "p")
         history_plot_filename: str = f"results/figs/cnn/history_cnn_{args.epochs}_epochs_{learning_rate_string}_lr_{file_datetime}"
 
-        plot_history_separately(training_history=history, loss_plot_title=loss_title, acc_plot_title=accuracy_title, details=training_details, save_plots=True, plot_filename=history_plot_filename)
+        acc_key = 'accuracy' if 'accuracy' in history.history else 'acc'
+        plot_history_separately(training_history=history, loss_plot_title=loss_title, acc_plot_title=accuracy_title, details=training_details, save_plots=True, plot_filename=history_plot_filename, acc_key=acc_key)
         # plot_history_together(history)
         print(f"Saved training history plots to: {history_plot_filename}")
 
