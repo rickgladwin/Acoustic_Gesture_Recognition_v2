@@ -117,6 +117,10 @@ def set_global_matplotlib_font(font_family_cascade: list[str]|None=None, default
     # return selected_font
     # set the global matplotlib font
     plt.rcParams['font.family'] = selected_font
+    
+
+def set_global_matplotlib_fontsize(font_size: int=12):
+    plt.rcParams['font.size'] = font_size
 
 
 def plot_history_separately(training_history: History, loss_plot_title: str|None=None, acc_plot_title: str|None=None, details: dict|None=None, save_plots: bool=False, plot_filename: str|None=None, val_acc_key: str|None=None, train_acc_key: str|None=None):

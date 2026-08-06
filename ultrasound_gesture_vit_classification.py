@@ -33,7 +33,7 @@ from tensorflow.keras import mixed_precision
 
 from ultrasound_gesture_cnn_classification import train_test_duration_display, is_apple_silicon, get_mac_system_info
 from utilities import ensure_dir, set_seed, dump_json, process_pool_size
-from visualizations import create_caption_from_details, plot_history_separately, save_confusion_matrix_png, set_global_matplotlib_font
+from visualizations import create_caption_from_details, plot_history_separately, save_confusion_matrix_png, set_global_matplotlib_font, set_global_matplotlib_fontsize
 
 # Enable mixed float16 precision (mat default to float32 for all operations otherwise)
 # this changed the time per epoch from apx 1m14s to apx 43s
@@ -262,14 +262,14 @@ def build_vit_with_attention_output(input_shape, num_classes,
     logits = keras.layers.Dense(num_classes)(features)
 
     model = keras.Model(inputs=inputs, outputs=[logits, final_attention_scores])
-    model_optimizer: keras.optimizers.Optimizer = tf.keras.optimizers.Lion(
+    # model_optimizer: keras.optimizers.Optimizer = tf.keras.optimizers.Lion(
     # model_optimizer: keras.optimizers.Optimizer = MacCompatibleLion(
     # raw_model_optimizer = tf.keras.optimizers.Lion(
-        learning_rate=learning_rate,
-        weight_decay=weight_decay,
-        beta_1=beta_1,
-        beta_2=beta_2,
-    )
+    #     learning_rate=learning_rate,
+    #     weight_decay=weight_decay,
+    #     beta_1=beta_1,
+    #     beta_2=beta_2,
+    # )
     
     # model_optimizer: tf.keras.optimizers.Optimizer = tf.keras.optimizers.AdamW(
     model_optimizer: tf.keras.optimizers.Optimizer = tf.keras.optimizers.Adam(
@@ -422,16 +422,17 @@ import cv2
 def plot_attention_map(model, image, patch_size=32, details: dict|None=None, save_plots=True, plot_filename=None, heatmap_cmap: str="jet"):
     # modified from code extracted from Google Gemini 3 (2026)
     """
-    Extracts attention scores, averages heads, and overlays a heatmap on the image.
+    Extracts attention scores, averages heads, and overlays an attention heatmap on the image.
 
     Args:
         model: The trained multi-output ViT model.
-        image: A single numpy image array of shape (H, W, C).
+        image: A single numpy image array of shape (H, W, C). This is an example image from the dataset on which the model was trained.
         patch_size: The patch size used during model compilation.
     """
     
     set_global_matplotlib_font()
-    caption_font_size: int = 8
+    set_global_matplotlib_fontsize()
+    caption_font_size: int = 12
     
     # pixels to inches
     # Define the scaling factor (1 pixel in inches)
@@ -485,6 +486,15 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
 
     # 7. Normalize heatmap values strictly between 0 and 1 for clean rendering
     heatmap = (heatmap - np.min(heatmap)) / (np.max(heatmap) - np.min(heatmap) + 1e-8)
+    
+    # TEST dummy details
+    details = {
+        "dummy": "dummy",
+        "longer_key": "123",
+        "short": "234.234234234",
+        "another_key": "345",
+    }
+    # end TEST
 
     # create plot caption
     if details is not None:
@@ -493,47 +503,107 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
         caption = ""
 
     # 8. Render the plot side-by-side: Original vs. Overlaid Heatmap
-    plt.figure(figsize=(10, 10))
+    # if details is not None:
+        # add space for the details box
+        # plt.figure(figsize=(10, 12))
+    # else:
+    #     plt.figure(figsize=(10, 10))
+    
+    # modified plot layout code based on Claude Code running qwen3.6 (2026)
+        
+    # plt.figure(figsize=(12,8), layout="constrained")
+    # fig = plt.figure(figsize=(6, 8))
+    fig = plt.figure(figsize=(800 * px, 1200 * px))
+    fig.subplots_adjust(wspace=0.0, hspace=0.00, left=0.0, right=1.0, top=1.0, bottom=0.0)
+    
+    
+    # gs = plt.GridSpec(6, 4, width_ratios=[1, 1, 1, 1], height_ratios=[1, 1, 1, 1, 1, 1], wspace=0.05, hspace=0.05)
+    gs = plt.GridSpec(3, 4, figure=fig)
 
     # subplot(nrows, ncols, index)
     # where index is 1-based and increases left-to-right, top-to-bottom
     # 1 2
     # 3 4
     # plt.subplot(2, 2, 1)
-    plt.subplot(3, 2, 1)
-    plt.imshow(image.astype("uint8") if image.max() > 1 else image, cmap="gray")
-    plt.title("Original Image")
-    plt.axis("off")
+    # plt.subplot(3, 2, 1)
+    
+    # plt.subplot(gs[0:1, 0:1])
+    # plt.imshow(image.astype("uint8") if image.max() > 1 else image, cmap="gray", extent=[0, image.shape[1], image.shape[0], 0], aspect="auto")
+    # plt.title("Original Image")
+    # plt.axis("off")
+    
+    ax_tl = fig.add_subplot(gs[0, 0:2])
+    ax_tl.imshow(image.astype("uint8") if image.max() > 1 else image, cmap="gray")
+    ax_tl.set_title("Image Example")
+    ax_tl.axis("off")
 
 #     plt.subplot(2, 2, 2)
-    plt.subplot(3, 2, 2)
-    plt.imshow(image.astype("uint8") if image.max() > 1 else image, vmin=0, vmax=1, cmap="gray")
+#     plt.subplot(3, 2, 2)
+    
+    # plt.subplot(gs[0:1, 2:3])
+    # plt.imshow(image.astype("uint8") if image.max() > 1 else image, vmin=0, vmax=1, cmap="gray", extent=[0, image.shape[1], image.shape[0], 0], aspect="auto")
     # Overlay the heatmap using a semi-transparent jet colormap
-    plt.imshow(heatmap, cmap=heatmap_cmap, alpha=heatmap_alpha_low)
-    plt.title(f"Heatmap Overlay (alpha={heatmap_alpha_low:.2f})")
-    plt.axis("off")
+    # plt.imshow(heatmap, cmap=heatmap_cmap, alpha=heatmap_alpha_low, extent=[0, image.shape[1], image.shape[0], 0], aspect="auto")
+    # plt.title(f"Heatmap Overlay (alpha={heatmap_alpha_low:.2f})")
+    # plt.axis("off")
+    
+    ax_tr = fig.add_subplot(gs[0, 2:4])
+    ax_tr.imshow(image.astype("uint8") if image.max() > 1 else image, vmin=0, vmax=1, cmap="gray")
+    ax_tr.imshow(heatmap, cmap=heatmap_cmap, alpha=heatmap_alpha_low)
+    ax_tr.set_title(f"Heatmap Overlay (alpha={heatmap_alpha_low:.2f})")
+    ax_tr.axis("off")
     
 #     plt.subplot(2, 2, 3)
-    plt.subplot(3, 2, 3)
-    plt.imshow(heatmap, cmap=heatmap_cmap)
-    plt.title("Attention Heatmap")
-    plt.axis("off")
+#     plt.subplot(3, 2, 3)
+#     plt.subplot(gs[2:3, 0:1])
+#     plt.imshow(heatmap, cmap=heatmap_cmap, extent=[0, image.shape[1], image.shape[0], 0], aspect="auto")
+#     plt.title("Attention Heatmap")
+#     plt.axis("off")
+    
+    ax_ml = fig.add_subplot(gs[1, 0:2])
+    ax_ml.imshow(heatmap, cmap=heatmap_cmap)
+    ax_ml.set_title("Attention Heatmap")
+    ax_ml.axis("off")
 
 #     plt.subplot(2, 2, 4)
-    plt.subplot(3, 2, 4)
-    plt.imshow(image.astype("uint8") if image.max() > 1 else image, vmin=0, vmax=1, cmap="gray")
-    # Overlay the heatmap using a semi-transparent jet colormap
-    plt.imshow(heatmap, cmap=heatmap_cmap, alpha=heatmap_alpha_high)
-    plt.title(f"Heatmap Overlay (alpha={heatmap_alpha_high:.2f})")
-    # if details is not None:
-    #     plt.xlabel(f'{caption}', fontdict={'size': caption_font_size})
-    plt.axis("off")
+#     plt.subplot(3, 2, 4)
     
-    if details is not None:
+    # plt.subplot(gs[2:3, 2:3])
+    # plt.imshow(image.astype("uint8") if image.max() > 1 else image, vmin=0, vmax=1, cmap="gray", extent=[0, image.shape[1], image.shape[0], 0], aspect="auto")
+    # Overlay the heatmap using a semi-transparent jet colormap
+    # plt.imshow(heatmap, cmap=heatmap_cmap, alpha=heatmap_alpha_high, extent=[0, image.shape[1], image.shape[0], 0], aspect="auto")
+    # plt.title(f"Heatmap Overlay (alpha={heatmap_alpha_high:.2f})")
+    # plt.axis("off")
+    
+    ax_mr = fig.add_subplot(gs[1, 2:4])
+    ax_mr.imshow(image.astype("uint8") if image.max() > 1 else image, vmin=0, vmax=1, cmap="gray")
+    ax_mr.imshow(heatmap, cmap=heatmap_cmap, alpha=heatmap_alpha_high)
+    ax_mr.set_title(f"Heatmap Overlay (alpha={heatmap_alpha_high:.2f})")
+    ax_mr.axis("off")
+    
+    ax_bot = fig.add_subplot(gs[2, 1:3])
+    # ax_bot.set_title("Details")
+    # ax_bot.set_title(f'{caption}', transform=ax_bot.transAxes, fontdict={'size': caption_font_size, 'color': 'black'})
+    ax_bot.text(0.5, 0.5, f'{caption}', ha="center", va="bottom", transform=ax_bot.transAxes, fontdict={'size': caption_font_size, 'color': 'black'})
+    
+    # ax_bot.set_xticks(ticks=None, labels=None, color="white")
+    # ax_bot.set_xlabel(f'{caption}', fontdict={'size': caption_font_size, 'color': 'black'}, labelpad=-2 * fig_dpi)
+    # ax_bot.set_xlabel(f'{caption}', fontdict={'size': caption_font_size, 'color': 'black'}, labelpad=-1.5 * fig_dpi)
+    # ax_bot.set_yticks(ticks=None, labels=None, color="white")
+    ax_bot.axis("off")
+    
+    
+    # if details is not None:
+    if False:
         # plt.subplot(2, 2, 4)
-        plt.subplot(3, 2, 5)
+        # plt.subplot(3, 2, (5, 6), frameon=False)
+        plt.subplot(gs[4:5, 1:2])
         plt.title("Details")
-        plt.xlabel(f'{caption}', fontdict={'size': caption_font_size}, labelpad=-2 * fig_dpi)
+        plt.xticks(ticks=None, labels=None, color="white")
+        plt.xlabel(f'{caption}', fontdict={'size': caption_font_size, 'color': 'black'}, labelpad=-2 * fig_dpi)
+        plt.yticks(ticks=None, labels=None, color="white")
+        # plt.axis("off")
+        # plt.ylabel(fontdict={'size': caption_font_size, 'color': 'black'}, labelpad=-2 * fig_dpi)
     
     plt.tight_layout()
 
@@ -541,10 +611,13 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
         if plot_filename is None:
             plot_filename = f"attn_?_?_epochs_?_lr_?"
         print(f"Saving plot to {plot_filename}")
-        plt.savefig(plot_filename, dpi=150)
-        plt.close()
+        # plt.savefig(plot_filename, dpi=150)
+        # TEST
+        plt.show()
+        # end TEST
     else:
         plt.show()
+    # plt.close()
 
 
 # ============================
@@ -610,13 +683,13 @@ def main():
     file_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     default_mode: str = "perp" # ["perp", "mirror"]
-    # default_subject_id: str = "6" # pending
-    # default_subject_id: str = "5" # pending
+    # default_subject_id: str = "6" # done
+    # default_subject_id: str = "5" # 50 epochs done. Do 500 and series
     # default_subject_id: str = "4" # done
-    # default_subject_id: str = "3" # done (redo history plot)
-    # default_subject_id: str = "2" # done (redo history plot)
-    default_subject_id: str = "1" #
-    default_epochs: int = 2 # paper used 500 (?)
+    # default_subject_id: str = "3" # done
+    default_subject_id: str = "2" # done (redo history plot)
+    # default_subject_id: str = "1" # done
+    default_epochs: int = 1 # paper used 500 (?)
     default_image_size: int = 320 # was 320, raw image is 640
     default_progress: str = "none" # ["tqdm", "none"]
     default_learning_rate: float = 0.0001 # was 0.0005
@@ -633,15 +706,15 @@ def main():
     default_output_attention_maps: bool = True
 
     # empty string for save or load model will skip save or load
-    default_save_model: str = f"results/models/vit/vit_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{default_image_size}px_attn_{default_output_attention_maps}_{file_datetime}.keras"
-    # default_save_model: str = ""
+    # default_save_model: str = f"results/models/vit/vit_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{default_image_size}px_attn_{default_output_attention_maps}_{file_datetime}.keras"
+    default_save_model: str = ""
     # default_load_model: str = f"results/models/vit/vit_perp_subject_2_1_epochs_20260717_191619.keras"
     # default_load_model: str = f"results/models/vit/vit_perp_subject_4_1_epochs_20260802_132156.keras"
     # default_load_model = f"results/models/vit/vit_perp_subject_4_1_epochs_320px_20260802_133434.keras"
     # default_load_model: str = f"results/models/vit/vit_perp_subject_4_1_epochs_320px_20260802_134208.keras"
     # default_load_model: str = f"results/models/vit/vit_perp_subject_4_1_epochs_320px_20260802_181936.keras"
-    # default_load_model: str = f"results/models/vit/vit_perp_subject_4_250_epochs_320px_attn_True_20260802_202144.keras"
-    default_load_model: str = ""
+    default_load_model: str = f"results/models/vit/vit_perp_subject_2_1_epochs_320px_attn_True_20260806_145000.keras"
+    # default_load_model: str = ""
 
     default_metrics_filepath: str = f"results/metrics/vit/metrics_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.json"
     default_confusion_matrix_filepath: str = f"results/figs/vit/cm_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
@@ -765,7 +838,6 @@ def main():
         )
         trained = True
     else:
-        # TODO: ** use build_vit_with_attention_model based on a config argument
         model = model_builder_function(
             input_shape=input_shape,
             num_classes=num_classes,
@@ -786,6 +858,9 @@ def main():
 
     if args.progress == "tqdm":
         callbacks.append(TqdmProgress(enable=True))
+    
+    # TODO: ** create callback for generating attention map after each epoch
+    # TODO: create callback for calculating test accuracy after each epoch
 
     # training_details is used to label result plots
     training_details: dict = {
@@ -921,7 +996,8 @@ def main():
     print(f"plotting attention map...")
     # heatmap_colormap = "jet"
     # heatmap_colormap = "hot"
-    heatmap_colormap = "turbo"
+    # heatmap_colormap = "turbo"
+    heatmap_colormap = "inferno"
     # TODO: build attn_plot_details from a loaded model (otherwise details might not match)
     attn_details: dict = {
         "mode": training_details
@@ -929,7 +1005,7 @@ def main():
     attn_plot_details: dict|None = None
     if not trained:
         attn_plot_details = training_details
-    plot_attention_map(model, test_image_tensor, patch_size=32, details=attn_plot_details, save_plots=True, plot_filename=args.attn_map, heatmap_cmap=heatmap_colormap)
+    plot_attention_map(model, test_image_tensor, patch_size=default_patch_size, details=attn_plot_details, save_plots=True, plot_filename=args.attn_map, heatmap_cmap=heatmap_colormap)
     print(f"done plotting attention map")
 
     # Save CM and model/metrics if requested
@@ -1002,4 +1078,5 @@ if __name__ == "__main__":
 # Darcet, T., Oquab, M., Mairal, J. & Bojanowski, P. (2023) Vision transformers need registers. arXiv e-prints, arXiv:2309.16588. https://doi.org/10.48550/arXiv.2309.16588
 #
 # Google Gemini 3 (2026) "Yes please provide an example snippet demonstrating how to format and average the multi-head attention scores to plot a clean heatmap over the input image." (mid-chat prompt) [LLM chat]. 2026–08–02 5:32 PM EDT.
-
+#
+# Claude Code running qwen3.6 (2026) "I am using matplotlib 3.10.9 in python 3.10. I need to create a layout of subplots with a top left, top right, middle left, and middle right plot. Centered below those four i need another subplot. Each subplot contains an image that should take up as much available space as possible. How can i do this?" [LLM chat]. 2026–08–06 5:08 PM EDT.
