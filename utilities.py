@@ -92,3 +92,11 @@ def process_pool_size(reserve_cores_count: int=2, verbose: bool=False) -> int:
     print(f"using process pool size {process_pool_size}") if verbose else None
     return process_pool_size
 
+
+def convert_keras_model_for_tensorflow(model: tf.keras.Model) -> tf.keras.Model:
+    """
+    Converts a Keras model to a TensorFlow model.
+    :param model: Keras model to convert
+    :return: TensorFlow model
+    """
+    return tf.keras.models.clone_model(model)

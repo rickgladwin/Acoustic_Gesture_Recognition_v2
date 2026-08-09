@@ -219,17 +219,25 @@ def main():
     
     file_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
     
+    # default_subject_id: str = "1"
+    # default_subject_id: str = "2"
+    # default_subject_id: str = "3"
     default_subject_id: str = "4"
+    # default_subject_id: str = "5"
+    # default_subject_id: str = "6"
     default_mode: str = "perp" # ["perp", "mirror"]
+    # TODO: check how much effort it would take to refactor integrated gradients and/or attention maps
+    #  using image size 320 or larger. 224 loses information.
     default_image_size: int = 224 # 240 # was 320. Source images are 640x640, but these take a long time to process
-    default_epochs: int = 2 # 200 to 0.9558 accuracy
+    default_epochs: int = 200 # 200 to 0.9558 accuracy, Subject 5, image size 320
     default_batch_size: int = 64
     default_explain_method: str = "" # ["", "GradCAM"]
     default_filters: list[int] = [16,16,16,16,16]
     default_dense_units: int = 64
     default_progress: str = "none" # ["tqdm", "none"]
     default_learning_rate: float = 1e-5 # 5e-5 # default 1e-3
-    default_dropout_rate: float = 0.5
+    default_dropout_rate: float = 0.4 # was 0.5
+    default_augmentations: list[str] = [""]
     # empty string for save or load model will skip save or load
     default_save_model: str = f"results/models/cnn/cnn_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{default_image_size}px_{file_datetime}.keras"
     # default_save_model: str = ""
@@ -402,7 +410,7 @@ def main():
     # Evaluate
     test_start = datetime.now()
     logits = model.predict(x_test, verbose=0)
-
+    
     print(f"model logits predictions for {len(x_test)} test inputs:")
     print(f"logits.shape: {logits.shape}")
     print(f"first 5 logits:")

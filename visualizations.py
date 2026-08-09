@@ -33,11 +33,25 @@ def train_test_duration_display(training_duration: timedelta, subsecond_precisio
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{subseconds_int:02d}" # pad each time place with leading zeros
 
 
-def save_confusion_matrix_png(y_true, y_pred, path, cm_title: str|None=None, details: dict|None=None):
+def save_confusion_matrix_png(y_true, y_pred, path, cm_title: str|None=None, details: dict|None=None, data_type=int):
+    import sklearn
+    print(sklearn.__version__)
+    print(sklearn.metrics.confusion_matrix.__module__)
+
+    import inspect
+    sig = inspect.signature(sklearn.metrics.confusion_matrix)
+    print(sig.parameters.keys())
+    
     if not path:
         return
     ensure_dir(path)
     cm = confusion_matrix(y_true, y_pred)
+    # cm = confusion_matrix(y_true, y_pred, sample_weight=np.ones_like(y_true, dtype=float))
+    
+    if cm_title is None:
+        cm_title = "Confusion Matrix"
+    
+    print(f"{cm_title}:\n{cm}")
     
     set_global_matplotlib_font()
     caption_font_size = 10
@@ -49,10 +63,7 @@ def save_confusion_matrix_png(y_true, y_pred, path, cm_title: str|None=None, det
 
     fig, ax = plt.subplots()
     im = ax.imshow(cm, interpolation="nearest")
-    if cm_title is not None:
-        ax.set_title(cm_title)
-    else:
-        ax.set_title("Confusion Matrix")
+    ax.set_title(cm_title)
     fig.colorbar(im, ax=ax)
     ax.set_xlabel(f"Predicted\n\n{caption}", fontdict={'size': caption_font_size})
     ax.set_ylabel("True")

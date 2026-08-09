@@ -16,6 +16,8 @@ from sklearn.metrics import accuracy_score, precision_recall_fscore_support, con
 import joblib
 import skmetal
 
+import tensorflow as tf
+from tensorflow import keras
 
 import config
 from ultrasound_gesture_cnn_classification import is_apple_silicon, get_mac_system_info, train_test_duration_display
@@ -111,7 +113,7 @@ def load_subject_arrays(root, mode, subject):
 
 
 @skmetal.accelerate
-def pipeline_from_steps(steps_list: list[tuple]):
+def pipeline_from_steps(steps_list: list[tuple]) -> Pipeline:
     # returns a scikit-learn Pipeline object from a list of tuples,
     # where each tuple has ("step_name", <sklearn model or algorithm>)
     # wrapper activates skmetal acceleration for sklearn
@@ -139,6 +141,37 @@ def pipeline_from_steps(steps_list: list[tuple]):
 # Main
 # ----------------------------
 def main():
+    # TODO: SVC may be high performing because the model is drawing boundaries in the data space, and despite
+    #  there being a lot of overlap (low separation) in the broader image, the areas of the ultrasound
+    #  image that actually distinguish the gestures have good separation. If we look at the image vector, only
+    #  a small subset of the dimensions are relevant to the classification. But this means that the remaining
+    #  information in the image is noise. A trained model will either have learned to ignore this noise or
+    #  erroneously include it in the classification.
+    #  SO: can we improve the SVC model by reducing this noise, either by filtering it out of the input image
+    #  through attention masking or by preprocessing the image? The trained SVC might run inference faster if
+    #  it has fewer dimensions, and it might train faster for similar reasons (though training time is not an
+    #  issue for SVC).
+    #  A downside of SVC is poor cross-dataset performance (weak generalization). Each subject's ultrasound images
+    #  have a slightly different orientation of the data capture device, different dimensions for the subject's
+    #  physiology, etc. So an SVC trained to classify based on a specific subset of features (brightness values
+    #  for specific pixels) may have the right _relative_ weights, but the identity of each of those features will
+    #  have shifted. Using a Hilbert curve for image vectorization instead of row-wise embedding may help with this,
+    #  if this hypothesis is correct. Using a Hilbert curve (or another space-filling curve that preserves more of
+    #  the relative spatial information) plus dropout or some layer that lets the input layer values "bleed" into
+    #  each other a bit, may improve generalization, since the same shift in the image content won't result in
+    #  as big a change in the meaning of the information in a given pixel.
+    #  It might be possible to mask the input values of the input image as well, or blur the areas outside the
+    #  attention mask, to further improve accuracy. Though SVC is consistently high already, in real world applications
+    #  of these models for use in prosthetics, inference accuracy needs to be as close to 100% as possible.
+    #  Even 1% error means that for every hundred gestures the prosthetic wearer makes throughout the day (** is there
+    #  a way to estimate this?) one will be wrong. It has been shown (** cite) that a lack of response from the
+    #  prosthetic is preferable to an incorrect response. Further, prosthetic users have cited poor accuracy and
+    #  a lack of fine-grained performance (** cite) as a roadblock to adoption.
+    # TODO: get data on the cross-subject variability of the different models' performance, and see what improvements
+    #  can be made to each models' downsides.
+    # TODO: see if there's a way to use the information about _how_ the ultrasound image has shifted from one subject
+    #  to another, and use that information to remap the SVC's weights.
+    
     file_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     # TODO: training the SVC model on a high enough number of samples results in the same test accuracy
@@ -155,14 +188,19 @@ def main():
     # NOTE: rbf can consume more RAM than linear. In case of exit code 137 (Out Of Memory error),
     # reduce the number of training samples and/or switch to a linear kernel.
     default_kernel: str = "linear" # one of ["linear", "rbf"]
-    default_training_set_size: int = 1000 # -1 for unrestricted, 4800 in the actual set
-    default_subject_id: str = "4"
-    default_metrics_filepath: str = f"results/metrics/svc/metrics_svc_subject_{default_subject_id}_{default_kernel}_kernel_{file_datetime}.json"
-    default_confusion_matrix_filepath: str = f"results/figs/svc/cm_svc_subject_{default_subject_id}_{default_kernel}_kernel_{file_datetime}.png"
+    default_training_set_size: int = 20 # -1 for unrestricted, 4800 in the actual set
+    # default_subject_id: str = "1"
+    # default_subject_id: str = "2"
+    # default_subject_id: str = "3"
+    # default_subject_id: str = "4" # done (increase training details?)
+    default_subject_id: str = "5"
+    # default_subject_id: str = "6"
+    default_metrics_filepath: str = f"results/metrics/svc/metrics_svc_subject_{default_subject_id}_{default_kernel}_kernel_{default_training_set_size}_training_samples_{file_datetime}.json"
+    default_confusion_matrix_filepath: str = f"results/figs/svc/cm_svc_subject_{default_subject_id}_{default_kernel}_kernel_{default_training_set_size}_training_samples_{file_datetime}.png"
 
     # empty string for save or load model will skip save or load
-    # default_save_model: str = f"results/models/svc/svc_{default_mode}_subject_{default_subject_id}_{default_training_set_size}_training_samples_{file_datetime}.keras"
-    default_save_model: str = ""
+    default_save_model: str = f"results/models/svc/svc_{default_mode}_subject_{default_subject_id}_{default_kernel}_kernel_{default_training_set_size}_training_samples_{file_datetime}.keras"
+    # default_save_model: str = ""
     # default_load_model: str = f"results/models/svc/svc_perp_subject_2_1000_training_samples_20260717_191619.keras"
     default_load_model: str = ""
 
@@ -190,10 +228,10 @@ def main():
     ap.add_argument("--no-scale", action="store_true", help="Disable StandardScaler (not recommended).")
 
     # Save / load
-    ap.add_argument("--save-model", type=str, default="", help="Path to save .joblib model.")
+    ap.add_argument("--save-model", type=str, default=default_save_model, help="Path to save .joblib model.")
     ap.add_argument("--out", type=str, default=default_metrics_filepath, help="Path to save metrics JSON.")
     ap.add_argument("--cm", type=str, default=default_confusion_matrix_filepath, help="Path to save confusion matrix PNG.")
-    ap.add_argument("--load-model", type=str, default="", help="Load a .joblib model and skip training.")
+    ap.add_argument("--load-model", type=str, default=default_load_model, help="Load a .joblib model and skip training.")
 
     args = ap.parse_args()
 
@@ -277,6 +315,19 @@ def main():
         print(f"training duration: {training_duration}")
         training_details['training_duration'] = str(training_duration)
         trained = False
+        
+        # save the SVC component of the pipeline as a keras model
+        if args.save_model:
+            ensure_dir(args.save_model)
+            print(f"Saving SVC model to {args.save_model}...")
+            print(f"pipeline has named steps:")
+            for step_name, step in clf.named_steps.items():
+                print(f"  {step_name}: {step}")
+            print(f"svc step has methods:")
+            for method_name in dir(clf.named_steps['svc']):
+                print(f"  {method_name}")
+            svc_model: keras.Model = clf.named_steps['svc'].svc_
+            # svc_model.save(args.save_model)
 
     # Predict & Metrics
     print(f"\n[{args.mode}/{args.subject}] Predicting and calculating metrics on {len(x_test)} test samples...")

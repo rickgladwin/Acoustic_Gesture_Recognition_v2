@@ -419,7 +419,7 @@ import matplotlib.pyplot as plt
 import cv2
 
 
-def plot_attention_map(model, image, patch_size=32, details: dict|None=None, save_plots=True, plot_filename=None, heatmap_cmap: str="jet"):
+def plot_attention_map(model, image, patch_size=32, details: dict|None=None, save_plot=True, save_plot_series: bool=False, plot_folder_path: str | None=None, plot_filename: str | None=None, heatmap_cmap: str= "jet"):
     # modified from code extracted from Google Gemini 3 (2026)
     """
     Extracts attention scores, averages heads, and overlays an attention heatmap on the image.
@@ -493,6 +493,7 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
         "longer_key": "123",
         "short": "234.234234234",
         "another_key": "345",
+        "epochs": 100,
     }
     # end TEST
 
@@ -515,9 +516,11 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
     # fig = plt.figure(figsize=(6, 8))
     fig = plt.figure(figsize=(800 * px, 1200 * px))
     fig.subplots_adjust(wspace=0.0, hspace=0.00, left=0.0, right=1.0, top=1.0, bottom=0.0)
+    figure_title: str = "ViT Attention Map (all heads)"
+    if details is not None and "epochs" in details.keys():
+        figure_title += f" {details['epochs']} epochs"
+    fig.suptitle(figure_title, fontsize=16, y=1.00, color="black")
     
-    
-    # gs = plt.GridSpec(6, 4, width_ratios=[1, 1, 1, 1], height_ratios=[1, 1, 1, 1, 1, 1], wspace=0.05, hspace=0.05)
     gs = plt.GridSpec(3, 4, figure=fig)
 
     # subplot(nrows, ncols, index)
@@ -607,17 +610,19 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
     
     plt.tight_layout()
 
-    if save_plots:
+    if save_plot:
+        if plot_folder_path is None:
+            plot_folder_path = "results/attention/vit/misc/plots/"
         if plot_filename is None:
             plot_filename = f"attn_?_?_epochs_?_lr_?"
+        plot_filename: str = os.path.join(plot_folder_path, plot_filename)
         print(f"Saving plot to {plot_filename}")
-        # plt.savefig(plot_filename, dpi=150)
+        plt.savefig(plot_filename, dpi=150, bbox_inches='tight')
         # TEST
-        plt.show()
+        # plt.show()
         # end TEST
     else:
         plt.show()
-    # plt.close()
 
 
 # ============================
@@ -718,9 +723,11 @@ def main():
 
     default_metrics_filepath: str = f"results/metrics/vit/metrics_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.json"
     default_confusion_matrix_filepath: str = f"results/figs/vit/cm_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
+    # for saving a series of intermediate attention maps
+    default_attention_map_series_folder_path: str = f"results/attention/vit/series/{file_datetime}/"
+    # for saving the attention map from the trained model
     default_attention_map_filepath: str = f"results/figs/vit/attn_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
 
-    
     # TODO: include global tensorflow precision setting in training details
     # TODO: include model type in title for loss + acc plots
     
@@ -757,7 +764,8 @@ def main():
     parser.add_argument("--out", type=str, default=default_metrics_filepath, help="Path to save metrics JSON, e.g., results/subject1_vit.json")
     parser.add_argument("--cm", type=str, default=default_confusion_matrix_filepath, help="Path to save confusion matrix PNG, e.g., results/figs/subject1_vit_cm.png")
     parser.add_argument("--output-attention-maps", type=bool, default=default_output_attention_maps, help="Whether to output attention maps when the model is built")
-    parser.add_argument("--attn-map", type=str, default=default_attention_map_filepath, help="Path to save attention map PNG, e.g., results/figs/subject1_vit_attn.png")
+    parser.add_argument("--attn-map-series-folder", type=str, default=default_attention_map_series_folder_path, help="Path to save intermediate attention map series, e.g., results/figs/attention/series/")
+    parser.add_argument("--attn-map", type=str, default=default_attention_map_filepath, help="Path to save final attention map PNG, e.g., results/figs/subject1_vit_attn.png")
 
     args = parser.parse_args()
     set_seed(args.seed)
@@ -858,6 +866,32 @@ def main():
 
     if args.progress == "tqdm":
         callbacks.append(TqdmProgress(enable=True))
+        
+    class PlotAttentionMapCallback(keras.callbacks.Callback):
+        def __init__(self, sample_image, patch_size, details, plot_folder_path=None, heatmap_cmap="inferno"):
+            super().__init__()
+            self.sample_image = sample_image
+            self.patch_size = patch_size
+            self.details = details
+            self.plot_folder_path = plot_folder_path
+            self.heatmap_cmap = heatmap_cmap
+        
+        def on_epoch_end(self, epoch, logs=None):
+            # plot an intermediate attention map for the model in its current state
+            print(f"Plotting attention map for epoch {epoch}")
+            # TODO: build the intermediate filename
+            plot_attention_map(
+                model=self.model,
+                image=self.sample_image,
+                patch_size=self.patch_size,
+                details=self.details,
+                save_plot=False,
+                save_plot_series=True,
+                plot_folder_path=self.plot_folder_path,
+                plot_filename=self.plot_filepath,
+                heatmap_cmap=self.heatmap_cmap, 
+            )
+    
     
     # TODO: ** create callback for generating attention map after each epoch
     # TODO: create callback for calculating test accuracy after each epoch
@@ -1005,7 +1039,7 @@ def main():
     attn_plot_details: dict|None = None
     if not trained:
         attn_plot_details = training_details
-    plot_attention_map(model, test_image_tensor, patch_size=default_patch_size, details=attn_plot_details, save_plots=True, plot_filename=args.attn_map, heatmap_cmap=heatmap_colormap)
+    plot_attention_map(model=model, image=test_image_tensor, patch_size=default_patch_size, details=attn_plot_details, save_plot=True, plot_filename=args.attn_map, heatmap_cmap=heatmap_colormap)
     print(f"done plotting attention map")
 
     # Save CM and model/metrics if requested
