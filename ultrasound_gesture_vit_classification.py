@@ -103,7 +103,8 @@ class TqdmProgress(keras.callbacks.Callback):
         if logs:
             self.batch_bar.set_postfix({
                 "loss": f"{logs.get('loss', 0):.4f}",
-                "acc": f"{logs.get('accuracy', 0):.4f}"
+                # "acc": f"{logs.get('accuracy', 0):.4f}"
+                "dense_19_acc": f"{logs.get('dense_19_accuracy', 0):.4f}"
             })
 
     def on_epoch_end(self, epoch, logs=None):
@@ -114,12 +115,14 @@ class TqdmProgress(keras.callbacks.Callback):
             self.batch_bar.close()
             self.batch_bar = None
         if logs:
+            # val_acc_
             tqdm.write(
                 f"Epoch {epoch+1} done | "
                 f"loss={logs.get('loss', 0):.4f} "
-                f"acc={logs.get('accuracy', 0):.4f} "
+                # f"acc={logs.get('accuracy', 0):.4f} "
+                f"acc={logs.get('dense_19_accuracy', 0):.4f} "
                 f"val_loss={logs.get('val_loss', 0):.4f} "
-                f"val_acc={logs.get('val_accuracy', 0):.4f}"
+                f"val_acc={logs.get('val_dense_19_accuracy', 0):.4f}"
             )
         if self.epoch_bar is not None:
             self.epoch_bar.update(1)
@@ -213,7 +216,11 @@ def build_vit_with_attention_output(input_shape, num_classes,
     """
     # TODO: add a CLS token for attention visualization?
     h, w, _ = input_shape
-    num_patches = (h // patch_size) * (w // patch_size)
+    num_patches = (h // patch_size) * (w // patch_size) 
+    # e.g. 
+    # 320 // 32 = 10
+    # 224 // 32 = 7
+    # 224 // 14 = 16
 
     inputs = keras.layers.Input(shape=input_shape)
     patches = Patches(patch_size)(inputs)
@@ -453,7 +460,7 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
     input_tensor = np.expand_dims(image, axis=0)
     print(f"input_tensor.shape: {input_tensor.shape}")
 
-    # 2. Extract outputs (logits and final attention scores)
+    # 2. Extract outputs (model returns logits and final attention scores)
     _, attention_scores = model.predict(input_tensor)
 
     # Shape of attention_scores is (batch, heads, target_seq_len, source_seq_len)
@@ -480,21 +487,38 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
 
     # convert data type for heatmap for compatibility with cv2.resize
     heatmap = heatmap.astype("float32")
+    
+    print(f"converted heatmap:")
+    plt.title("converted heatmap")
+    plt.imshow(heatmap, cmap="inferno")
+    plt.show()
+    print(f"converted heatmap shape: {heatmap.shape}")
+    print(f"converted heatmap dtype: {heatmap.dtype}")
 
     # 6. Resize heatmap to match original image dimensions using cubic interpolation
     heatmap = cv2.resize(heatmap, (w, h), interpolation=cv2.INTER_CUBIC)
+    
+    print(f"resized heatmap:")
+    plt.title("resized heatmap")
+    plt.imshow(heatmap, cmap="inferno")
+    plt.show()
 
     # 7. Normalize heatmap values strictly between 0 and 1 for clean rendering
     heatmap = (heatmap - np.min(heatmap)) / (np.max(heatmap) - np.min(heatmap) + 1e-8)
     
+    print(f"normalized heatmap:")
+    plt.title("normalized heatmap")
+    plt.imshow(heatmap, cmap="inferno")
+    plt.show()
+    
     # TEST dummy details
-    details = {
-        "dummy": "dummy",
-        "longer_key": "123",
-        "short": "234.234234234",
-        "another_key": "345",
-        "epochs": 100,
-    }
+    # details = {
+    #     "dummy": "dummy",
+    #     "longer_key": "123",
+    #     "short": "234.234234234",
+    #     "another_key": "345",
+    #     "epochs": 100,
+    # }
     # end TEST
 
     # create plot caption
@@ -587,7 +611,7 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
     ax_bot = fig.add_subplot(gs[2, 1:3])
     # ax_bot.set_title("Details")
     # ax_bot.set_title(f'{caption}', transform=ax_bot.transAxes, fontdict={'size': caption_font_size, 'color': 'black'})
-    ax_bot.text(0.5, 0.5, f'{caption}', ha="center", va="bottom", transform=ax_bot.transAxes, fontdict={'size': caption_font_size, 'color': 'black'})
+    ax_bot.text(0.5, 0.1, f'{caption}', ha="center", va="bottom", transform=ax_bot.transAxes, fontdict={'size': caption_font_size, 'color': 'black'})
     
     # ax_bot.set_xticks(ticks=None, labels=None, color="white")
     # ax_bot.set_xlabel(f'{caption}', fontdict={'size': caption_font_size, 'color': 'black'}, labelpad=-2 * fig_dpi)
@@ -619,7 +643,7 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
         print(f"Saving plot to {plot_filename}")
         plt.savefig(plot_filename, dpi=150, bbox_inches='tight')
         # TEST
-        # plt.show()
+        plt.show()
         # end TEST
     else:
         plt.show()
@@ -690,36 +714,38 @@ def main():
     default_mode: str = "perp" # ["perp", "mirror"]
     # default_subject_id: str = "6" # done
     # default_subject_id: str = "5" # 50 epochs done. Do 500 and series
-    # default_subject_id: str = "4" # done
+    default_subject_id: str = "4" # done
     # default_subject_id: str = "3" # done
-    default_subject_id: str = "2" # done (redo history plot)
+    # default_subject_id: str = "2" # done (redo history plot)
     # default_subject_id: str = "1" # done
-    default_epochs: int = 1 # paper used 500 (?)
-    default_image_size: int = 320 # was 320, raw image is 640
+    default_epochs: int = 500 # paper used 500 (?)
+    default_image_size: int = 224 # was 320, raw image is 640
     default_progress: str = "none" # ["tqdm", "none"]
     default_learning_rate: float = 0.0001 # was 0.0005
     default_weight_decay: float = 0.001 # was 0.0001
     default_batch_size: int = 256 # was 256 (larger batch sizes are required for ViTs in order to saturate the GPU)
-    default_patch_size: int = 32 # was 32, 320/16 = 20 (took several minutes and never finished the first iteration)
+    # default_patch_size: int = 32 # was 32, 320/16 = 20 (took several minutes and never finished the first iteration)
+    default_patch_size: int = 14 # was 32, 320/16 = 20 (took several minutes and never finished the first iteration)
     default_num_heads: int = 16
     default_num_layers: int = 8
     default_projection_dim: int = 64
     default_dense_units: int = 2048
+    default_save_heatmap: bool = False
 
     # selects a model builder function that outputs attention from the MultiheadAttention layer
     # or uses the build_vit function without attention output
     default_output_attention_maps: bool = True
 
     # empty string for save or load model will skip save or load
-    # default_save_model: str = f"results/models/vit/vit_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{default_image_size}px_attn_{default_output_attention_maps}_{file_datetime}.keras"
-    default_save_model: str = ""
+    default_save_model: str = f"results/models/vit/vit_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{default_image_size}px_{default_patch_size}_patch_size_attn_{default_output_attention_maps}_{file_datetime}.keras"
+    # default_save_model: str = ""
     # default_load_model: str = f"results/models/vit/vit_perp_subject_2_1_epochs_20260717_191619.keras"
     # default_load_model: str = f"results/models/vit/vit_perp_subject_4_1_epochs_20260802_132156.keras"
     # default_load_model = f"results/models/vit/vit_perp_subject_4_1_epochs_320px_20260802_133434.keras"
     # default_load_model: str = f"results/models/vit/vit_perp_subject_4_1_epochs_320px_20260802_134208.keras"
     # default_load_model: str = f"results/models/vit/vit_perp_subject_4_1_epochs_320px_20260802_181936.keras"
-    default_load_model: str = f"results/models/vit/vit_perp_subject_2_1_epochs_320px_attn_True_20260806_145000.keras"
-    # default_load_model: str = ""
+    # default_load_model: str = f"results/models/vit/vit_perp_subject_2_1_epochs_320px_attn_True_20260806_145000.keras"
+    default_load_model: str = ""
 
     default_metrics_filepath: str = f"results/metrics/vit/metrics_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.json"
     default_confusion_matrix_filepath: str = f"results/figs/vit/cm_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
@@ -746,6 +772,8 @@ def main():
         help="Subject folder name.")
     parser.add_argument("--image-size", type=int, default=default_image_size,
         help="Model input size (pixels).")
+    parser.add_argument("--patch-size", type=int, default=default_patch_size,
+        help="patch width and height in pixels for the ViT. image_size // patch_size == patches_per_dim")
     # Training
     # parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs.")
     parser.add_argument("--epochs", type=int, default=default_epochs, help="Number of training epochs.")
@@ -868,6 +896,7 @@ def main():
         callbacks.append(TqdmProgress(enable=True))
         
     class PlotAttentionMapCallback(keras.callbacks.Callback):
+        # TODO: finish this, including plot_filepath vs plot_folder_path vs plot_filename
         def __init__(self, sample_image, patch_size, details, plot_folder_path=None, heatmap_cmap="inferno"):
             super().__init__()
             self.sample_image = sample_image
@@ -901,6 +930,7 @@ def main():
         "mode": args.mode,
         "subject": args.subject,
         "image_dimensions": f"{args.image_size}x{args.image_size}",
+        "patches_per_dim": f"{args.image_size // args.patch_size}",
         "epochs": args.epochs,
         "batch_size": args.batch_size,
         "learning_rate": args.lr,
@@ -1039,7 +1069,7 @@ def main():
     attn_plot_details: dict|None = None
     if not trained:
         attn_plot_details = training_details
-    plot_attention_map(model=model, image=test_image_tensor, patch_size=default_patch_size, details=attn_plot_details, save_plot=True, plot_filename=args.attn_map, heatmap_cmap=heatmap_colormap)
+    plot_attention_map(model=model, image=test_image_tensor, patch_size=default_patch_size, details=attn_plot_details, save_plot=default_save_heatmap, plot_filename=args.attn_map, heatmap_cmap=heatmap_colormap)
     print(f"done plotting attention map")
 
     # Save CM and model/metrics if requested

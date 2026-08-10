@@ -61,7 +61,7 @@ def save_confusion_matrix_png(y_true, y_pred, path, cm_title: str|None=None, det
     else:
         caption = ""
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(10, 12))
     im = ax.imshow(cm, interpolation="nearest")
     ax.set_title(cm_title)
     fig.colorbar(im, ax=ax)
@@ -176,7 +176,8 @@ def plot_history_separately(training_history: History, loss_plot_title: str|None
 
     # Plot Training & Validation Loss
     # for ViT with attention output:
-    # history.history.keys(): dict_keys(['loss', 'dense_19_loss', 'dense_19_accuracy', 'val_loss', 'val_dense_19_loss', 'val_dense_19_accuracy'])
+    # history.history.keys(): dict_keys(['loss', 'dense_19
+    # _loss', 'dense_19_accuracy', 'val_loss', 'val_dense_19_loss', 'val_dense_19_accuracy'])
     loss_title: str = loss_plot_title if loss_plot_title is not None else 'Model Loss Over Epochs'
 
     ax1.plot(training_history.history['loss'], label='Train Loss', color='blue', linewidth=1)

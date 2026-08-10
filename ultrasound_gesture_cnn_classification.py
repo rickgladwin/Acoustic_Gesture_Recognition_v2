@@ -239,11 +239,12 @@ def main():
     default_dropout_rate: float = 0.4 # was 0.5
     default_augmentations: list[str] = [""]
     # empty string for save or load model will skip save or load
-    default_save_model: str = f"results/models/cnn/cnn_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{default_image_size}px_{file_datetime}.keras"
-    # default_save_model: str = ""
+    # default_save_model: str = f"results/models/cnn/cnn_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{default_image_size}px_{file_datetime}.keras"
+    default_save_model: str = ""
     # default_load_model: str = f"results/models/cnn/cnn_perp_subject_4_200_epochs_20260719_133931.keras"
     # default_load_model: str = f"results/models/cnn/cnn_perp_subject_4_50_epochs_224px_20260802_215005.keras"
-    default_load_model: str = ""
+    default_load_model: str = f"results/models/cnn/cnn_perp_subject_4_200_epochs_224px_20260804_124025.keras"
+    # default_load_model: str = ""
     default_metrics_filepath: str = f"results/metrics/cnn/metrics_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.json"
     default_confusion_matrix_filepath: str = f"results/figs/cnn/cm_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
     
@@ -327,6 +328,8 @@ def main():
     if args.load_model and os.path.isfile(args.load_model):
         print(f"Loading model from: {args.load_model}")
         model = keras.models.load_model(args.load_model, compile=False)
+        # put the loaded keras model into inference mode
+        keras.backend.set_learning_phase(0)
         model.compile(
             optimizer=keras.optimizers.Adam(learning_rate=args.lr),
             loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
@@ -415,6 +418,17 @@ def main():
     print(f"logits.shape: {logits.shape}")
     print(f"first 5 logits:")
     print(logits[:5])
+    print_start_id: int = 300
+    print_stop_id: int = 400
+    # print(f"last 5 logits:")
+    # print(logits[print_stop_id:])
+    print(f"printing logits {print_start_id}:{print_stop_id}")
+    for logits_id in range(print_start_id, print_stop_id):
+        print(f"{logits_id}: {logits[logits_id]}")
+    print(f"printing argmax {print_start_id}:{print_stop_id}")
+    for logits_id in range(print_start_id, print_stop_id):
+        print(f"{logits_id}: {np.argmax(logits[logits_id])}")
+    # print(logits[print_start_id:print_stop_id])
 
     y_pred = np.argmax(logits, axis=1)
     test_end = datetime.now()
