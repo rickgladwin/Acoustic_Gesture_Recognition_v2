@@ -713,12 +713,12 @@ def main():
 
     default_mode: str = "perp" # ["perp", "mirror"]
     # default_subject_id: str = "6" # done
-    # default_subject_id: str = "5" # 50 epochs done. Do 500 and series
-    default_subject_id: str = "4" # done
+    default_subject_id: str = "5" # 50 epochs done. Do 500 and series
+    # default_subject_id: str = "4" # done
     # default_subject_id: str = "3" # done
     # default_subject_id: str = "2" # done (redo history plot)
     # default_subject_id: str = "1" # done
-    default_epochs: int = 500 # paper used 500 (?)
+    default_epochs: int = 200 # paper used 500 (?)
     default_image_size: int = 224 # was 320, raw image is 640
     default_progress: str = "none" # ["tqdm", "none"]
     default_learning_rate: float = 0.0001 # was 0.0005
@@ -730,7 +730,7 @@ def main():
     default_num_layers: int = 8
     default_projection_dim: int = 64
     default_dense_units: int = 2048
-    default_save_heatmap: bool = False
+    default_save_heatmap: bool = True
 
     # selects a model builder function that outputs attention from the MultiheadAttention layer
     # or uses the build_vit function without attention output
