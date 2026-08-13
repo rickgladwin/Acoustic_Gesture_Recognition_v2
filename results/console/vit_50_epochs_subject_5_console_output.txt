@@ -1,0 +1,154 @@
+/Users/rickgladwin/Code/u_of_hull/dissertation/Acoustic_Gesture_Recognition_v2/venv/bin/python /Users/rickgladwin/Code/u_of_hull/dissertation/Acoustic_Gesture_Recognition_v2/ultrasound_gesture_vit_classification.py 
+
+checking device count using tensorflow-metal...
+✅ Metal GPU Acceleration is active! Found: [PhysicalDevice(name='/physical_device:GPU:0', device_type='GPU')]
+-- Loading data from: /Users/rickgladwin/Code/u_of_hull/dissertation/bimbraw_2025_dataset/data/...
+WARNING:tensorflow:Mixed precision compatibility check (mixed_float16): WARNING
+Your GPU may run slowly with dtype policy mixed_float16 because it does not have compute capability of at least 7.0. Your GPU:
+  METAL, no compute capability (probably not an Nvidia GPU)
+See https://developer.nvidia.com/cuda-gpus for a list of GPUs and their compute capabilities.
+If you will use compatible GPU(s) not attached to this host, e.g. by running a multi-worker model, you can ignore this warning. This message will only be logged once
+2026-08-05 20:42:45.951933: I metal_plugin/src/device/metal_device.cc:1154] Metal device set to: Apple M4 Max
+2026-08-05 20:42:45.951955: I metal_plugin/src/device/metal_device.cc:296] systemMemory: 64.00 GB
+2026-08-05 20:42:45.951958: I metal_plugin/src/device/metal_device.cc:313] maxCacheSize: 24.00 GB
+2026-08-05 20:42:45.951983: I tensorflow/core/common_runtime/pluggable_device/pluggable_device_factory.cc:303] Could not identify NUMA node of platform GPU ID 0, defaulting to 0. Your kernel may not have been built with NUMA support.
+2026-08-05 20:42:45.951997: I tensorflow/core/common_runtime/pluggable_device/pluggable_device_factory.cc:269] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:0 with 0 MB memory) -> physical PluggableDevice (device: 0, name: METAL, pci bus id: <undefined>)
+-- loaded 4800 training samples and 1200 test samples for 12 classes
+-- input shape: (320, 320, 1)
+x_test shape: (1200, 320, 320, 1)
+-- train/val split: 4320 train samples, 480 val samples
+WARNING:absl:At this time, the v2.11+ optimizer `tf.keras.optimizers.Adam` runs slowly on M1/M2 Macs, please use the legacy Keras optimizer instead, located at `tf.keras.optimizers.legacy.Adam`.
+WARNING:absl:There is a known slowdown when using v2.11+ Keras optimizers on M1/M2 Macs. Falling back to the legacy Keras optimizer, i.e., `tf.keras.optimizers.legacy.Adam`.
+-- training model for 'perp/Subject_5'...
+os.cpu_count(): 16
+using process pool size 15
+Epoch 1/50
+2026-08-05 20:42:49.732406: I tensorflow/core/grappler/optimizers/custom_graph_optimizer_registry.cc:114] Plugin optimizer for device_type GPU is enabled.
+2026-08-05 20:43:29.968974: I tensorflow/core/grappler/optimizers/custom_graph_optimizer_registry.cc:114] Plugin optimizer for device_type GPU is enabled.
+17/17 - 45s - loss: 8.6138 - dense_19_loss: 8.6138 - dense_19_accuracy: 0.0884 - val_loss: 2.4951 - val_dense_19_loss: 2.4951 - val_dense_19_accuracy: 0.1271 - 45s/epoch - 3s/step
+Epoch 2/50
+17/17 - 37s - loss: 7.7704 - dense_19_loss: 7.7704 - dense_19_accuracy: 0.1093 - val_loss: 2.3331 - val_dense_19_loss: 2.3331 - val_dense_19_accuracy: 0.2000 - 37s/epoch - 2s/step
+Epoch 3/50
+17/17 - 37s - loss: 6.8062 - dense_19_loss: 6.8062 - dense_19_accuracy: 0.1148 - val_loss: 1.9406 - val_dense_19_loss: 1.9406 - val_dense_19_accuracy: 0.3438 - 37s/epoch - 2s/step
+Epoch 4/50
+17/17 - 37s - loss: 5.9969 - dense_19_loss: 5.9969 - dense_19_accuracy: 0.1345 - val_loss: 1.8256 - val_dense_19_loss: 1.8256 - val_dense_19_accuracy: 0.5437 - 37s/epoch - 2s/step
+Epoch 5/50
+17/17 - 37s - loss: 5.5729 - dense_19_loss: 5.5729 - dense_19_accuracy: 0.1606 - val_loss: 1.5988 - val_dense_19_loss: 1.5988 - val_dense_19_accuracy: 0.3562 - 37s/epoch - 2s/step
+Epoch 6/50
+17/17 - 37s - loss: 4.8380 - dense_19_loss: 4.8380 - dense_19_accuracy: 0.2007 - val_loss: 1.0919 - val_dense_19_loss: 1.0919 - val_dense_19_accuracy: 0.7396 - 37s/epoch - 2s/step
+Epoch 7/50
+17/17 - 37s - loss: 4.5242 - dense_19_loss: 4.5242 - dense_19_accuracy: 0.2222 - val_loss: 1.0025 - val_dense_19_loss: 1.0025 - val_dense_19_accuracy: 0.6917 - 37s/epoch - 2s/step
+Epoch 8/50
+17/17 - 37s - loss: 4.2258 - dense_19_loss: 4.2258 - dense_19_accuracy: 0.2500 - val_loss: 1.1861 - val_dense_19_loss: 1.1861 - val_dense_19_accuracy: 0.5875 - 37s/epoch - 2s/step
+Epoch 9/50
+17/17 - 37s - loss: 3.5648 - dense_19_loss: 3.5648 - dense_19_accuracy: 0.3009 - val_loss: 0.6274 - val_dense_19_loss: 0.6274 - val_dense_19_accuracy: 0.8354 - 37s/epoch - 2s/step
+Epoch 10/50
+17/17 - 37s - loss: 3.1289 - dense_19_loss: 3.1289 - dense_19_accuracy: 0.3560 - val_loss: 0.4917 - val_dense_19_loss: 0.4917 - val_dense_19_accuracy: 0.7833 - 37s/epoch - 2s/step
+Epoch 11/50
+17/17 - 37s - loss: 2.7896 - dense_19_loss: 2.7896 - dense_19_accuracy: 0.4111 - val_loss: 0.3228 - val_dense_19_loss: 0.3228 - val_dense_19_accuracy: 0.9042 - 37s/epoch - 2s/step
+Epoch 12/50
+17/17 - 38s - loss: 2.3553 - dense_19_loss: 2.3553 - dense_19_accuracy: 0.4757 - val_loss: 0.3298 - val_dense_19_loss: 0.3298 - val_dense_19_accuracy: 0.9271 - 38s/epoch - 2s/step
+Epoch 13/50
+17/17 - 37s - loss: 2.0116 - dense_19_loss: 2.0116 - dense_19_accuracy: 0.5296 - val_loss: 0.3247 - val_dense_19_loss: 0.3247 - val_dense_19_accuracy: 0.9042 - 37s/epoch - 2s/step
+Epoch 14/50
+17/17 - 38s - loss: 1.7125 - dense_19_loss: 1.7125 - dense_19_accuracy: 0.5803 - val_loss: 0.2501 - val_dense_19_loss: 0.2501 - val_dense_19_accuracy: 0.9354 - 38s/epoch - 2s/step
+Epoch 15/50
+17/17 - 38s - loss: 1.4051 - dense_19_loss: 1.4051 - dense_19_accuracy: 0.6336 - val_loss: 0.1976 - val_dense_19_loss: 0.1976 - val_dense_19_accuracy: 0.9542 - 38s/epoch - 2s/step
+Epoch 16/50
+17/17 - 37s - loss: 1.2422 - dense_19_loss: 1.2422 - dense_19_accuracy: 0.6782 - val_loss: 0.1426 - val_dense_19_loss: 0.1426 - val_dense_19_accuracy: 0.9729 - 37s/epoch - 2s/step
+Epoch 17/50
+17/17 - 38s - loss: 1.0101 - dense_19_loss: 1.0101 - dense_19_accuracy: 0.7144 - val_loss: 0.1512 - val_dense_19_loss: 0.1512 - val_dense_19_accuracy: 0.9708 - 38s/epoch - 2s/step
+Epoch 18/50
+17/17 - 38s - loss: 0.9937 - dense_19_loss: 0.9937 - dense_19_accuracy: 0.7238 - val_loss: 0.1770 - val_dense_19_loss: 0.1770 - val_dense_19_accuracy: 0.9604 - 38s/epoch - 2s/step
+Epoch 19/50
+17/17 - 37s - loss: 0.8341 - dense_19_loss: 0.8341 - dense_19_accuracy: 0.7646 - val_loss: 0.2078 - val_dense_19_loss: 0.2078 - val_dense_19_accuracy: 0.9604 - 37s/epoch - 2s/step
+Epoch 20/50
+17/17 - 38s - loss: 0.7253 - dense_19_loss: 0.7253 - dense_19_accuracy: 0.7944 - val_loss: 0.1529 - val_dense_19_loss: 0.1529 - val_dense_19_accuracy: 0.9750 - 38s/epoch - 2s/step
+Epoch 21/50
+17/17 - 38s - loss: 0.6503 - dense_19_loss: 0.6503 - dense_19_accuracy: 0.8139 - val_loss: 0.1285 - val_dense_19_loss: 0.1285 - val_dense_19_accuracy: 0.9854 - 38s/epoch - 2s/step
+Epoch 22/50
+17/17 - 38s - loss: 0.5696 - dense_19_loss: 0.5696 - dense_19_accuracy: 0.8343 - val_loss: 0.1521 - val_dense_19_loss: 0.1521 - val_dense_19_accuracy: 0.9771 - 38s/epoch - 2s/step
+Epoch 23/50
+17/17 - 38s - loss: 0.5106 - dense_19_loss: 0.5106 - dense_19_accuracy: 0.8586 - val_loss: 0.1760 - val_dense_19_loss: 0.1760 - val_dense_19_accuracy: 0.9646 - 38s/epoch - 2s/step
+Epoch 24/50
+17/17 - 38s - loss: 0.4413 - dense_19_loss: 0.4413 - dense_19_accuracy: 0.8752 - val_loss: 0.1451 - val_dense_19_loss: 0.1451 - val_dense_19_accuracy: 0.9854 - 38s/epoch - 2s/step
+Epoch 25/50
+17/17 - 38s - loss: 0.3890 - dense_19_loss: 0.3890 - dense_19_accuracy: 0.8917 - val_loss: 0.1527 - val_dense_19_loss: 0.1527 - val_dense_19_accuracy: 0.9833 - 38s/epoch - 2s/step
+Epoch 26/50
+17/17 - 38s - loss: 0.3307 - dense_19_loss: 0.3307 - dense_19_accuracy: 0.9014 - val_loss: 0.1510 - val_dense_19_loss: 0.1510 - val_dense_19_accuracy: 0.9812 - 38s/epoch - 2s/step
+Epoch 27/50
+17/17 - 38s - loss: 0.3495 - dense_19_loss: 0.3495 - dense_19_accuracy: 0.8975 - val_loss: 0.1596 - val_dense_19_loss: 0.1596 - val_dense_19_accuracy: 0.9854 - 38s/epoch - 2s/step
+Epoch 28/50
+17/17 - 38s - loss: 0.3037 - dense_19_loss: 0.3037 - dense_19_accuracy: 0.9160 - val_loss: 0.1652 - val_dense_19_loss: 0.1652 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 29/50
+17/17 - 38s - loss: 0.2930 - dense_19_loss: 0.2930 - dense_19_accuracy: 0.9201 - val_loss: 0.1772 - val_dense_19_loss: 0.1772 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 30/50
+17/17 - 38s - loss: 0.2921 - dense_19_loss: 0.2921 - dense_19_accuracy: 0.9190 - val_loss: 0.1651 - val_dense_19_loss: 0.1651 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 31/50
+17/17 - 38s - loss: 0.2929 - dense_19_loss: 0.2929 - dense_19_accuracy: 0.9266 - val_loss: 0.1795 - val_dense_19_loss: 0.1795 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 32/50
+17/17 - 38s - loss: 0.2559 - dense_19_loss: 0.2559 - dense_19_accuracy: 0.9391 - val_loss: 0.1697 - val_dense_19_loss: 0.1697 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 33/50
+17/17 - 38s - loss: 0.2281 - dense_19_loss: 0.2281 - dense_19_accuracy: 0.9442 - val_loss: 0.1737 - val_dense_19_loss: 0.1737 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 34/50
+17/17 - 38s - loss: 0.2072 - dense_19_loss: 0.2072 - dense_19_accuracy: 0.9451 - val_loss: 0.1870 - val_dense_19_loss: 0.1870 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 35/50
+17/17 - 38s - loss: 0.2210 - dense_19_loss: 0.2210 - dense_19_accuracy: 0.9463 - val_loss: 0.1791 - val_dense_19_loss: 0.1791 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 36/50
+17/17 - 38s - loss: 0.1938 - dense_19_loss: 0.1938 - dense_19_accuracy: 0.9583 - val_loss: 0.1871 - val_dense_19_loss: 0.1871 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 37/50
+17/17 - 38s - loss: 0.2164 - dense_19_loss: 0.2164 - dense_19_accuracy: 0.9551 - val_loss: 0.1795 - val_dense_19_loss: 0.1795 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 38/50
+17/17 - 38s - loss: 0.1808 - dense_19_loss: 0.1808 - dense_19_accuracy: 0.9609 - val_loss: 0.1838 - val_dense_19_loss: 0.1838 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 39/50
+17/17 - 38s - loss: 0.1976 - dense_19_loss: 0.1976 - dense_19_accuracy: 0.9581 - val_loss: 0.1875 - val_dense_19_loss: 0.1875 - val_dense_19_accuracy: 0.9854 - 38s/epoch - 2s/step
+Epoch 40/50
+17/17 - 38s - loss: 0.2168 - dense_19_loss: 0.2168 - dense_19_accuracy: 0.9509 - val_loss: 0.1886 - val_dense_19_loss: 0.1886 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 41/50
+17/17 - 38s - loss: 0.1800 - dense_19_loss: 0.1800 - dense_19_accuracy: 0.9644 - val_loss: 0.1883 - val_dense_19_loss: 0.1883 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 42/50
+17/17 - 38s - loss: 0.1931 - dense_19_loss: 0.1931 - dense_19_accuracy: 0.9556 - val_loss: 0.1964 - val_dense_19_loss: 0.1964 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 43/50
+17/17 - 38s - loss: 0.2025 - dense_19_loss: 0.2025 - dense_19_accuracy: 0.9572 - val_loss: 0.1897 - val_dense_19_loss: 0.1897 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 44/50
+17/17 - 38s - loss: 0.2068 - dense_19_loss: 0.2068 - dense_19_accuracy: 0.9535 - val_loss: 0.1949 - val_dense_19_loss: 0.1949 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 45/50
+17/17 - 38s - loss: 0.1958 - dense_19_loss: 0.1958 - dense_19_accuracy: 0.9616 - val_loss: 0.2015 - val_dense_19_loss: 0.2015 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 46/50
+17/17 - 38s - loss: 0.1817 - dense_19_loss: 0.1817 - dense_19_accuracy: 0.9674 - val_loss: 0.2080 - val_dense_19_loss: 0.2080 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 47/50
+17/17 - 38s - loss: 0.2075 - dense_19_loss: 0.2075 - dense_19_accuracy: 0.9581 - val_loss: 0.1995 - val_dense_19_loss: 0.1995 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 48/50
+17/17 - 38s - loss: 0.1816 - dense_19_loss: 0.1816 - dense_19_accuracy: 0.9650 - val_loss: 0.2100 - val_dense_19_loss: 0.2100 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+Epoch 49/50
+17/17 - 38s - loss: 0.1684 - dense_19_loss: 0.1684 - dense_19_accuracy: 0.9685 - val_loss: 0.2008 - val_dense_19_loss: 0.2008 - val_dense_19_accuracy: 0.9854 - 38s/epoch - 2s/step
+Epoch 50/50
+17/17 - 38s - loss: 0.1604 - dense_19_loss: 0.1604 - dense_19_accuracy: 0.9664 - val_loss: 0.1965 - val_dense_19_loss: 0.1965 - val_dense_19_accuracy: 0.9875 - 38s/epoch - 2s/step
+-- training complete.
+history.history.keys(): dict_keys(['loss', 'dense_19_loss', 'dense_19_accuracy', 'val_loss', 'val_dense_19_loss', 'val_dense_19_accuracy'])
+2026-08-05 21:14:20.023689: I tensorflow/core/grappler/optimizers/custom_graph_optimizer_registry.cc:114] Plugin optimizer for device_type GPU is enabled.
+
+[perp/Subject_5]   Test Accuracy: 0.9675
+[perp/Subject_5] Random Accuracy: 0.0833
+[perp/Subject_5] Macro Precision: 0.9697  Macro Recall: 0.9675  Macro F1: 0.9674
+plotting training history...
+plotting history: <keras.src.callbacks.History object at 0x447c06290>
+Saving plot to results/figs/vit/history_vit_subject_5_50_epochs_1p00e-04_lr_20260805_204245
+Saved training history plots to: results/figs/vit/history_vit_subject_5_50_epochs_1p00e-04_lr_20260805_204245
+plotting attention map...
+fig_dpi: 100.0
+image.shape: (320, 320, 1)
+input_tensor.shape: (1, 320, 320, 1)
+1/1 [==============================] - 0s 448ms/step
+patch_weights.shape: (100,)
+heatmap.shape: (10, 10)
+heatmap.dtype: float16
+(w, h): ((320, 320))
+Saving plot to results/figs/vit/attn_vit_subject_5_50_epochs_20260805_204245.png
+done plotting attention map
+Saved confusion matrix to: results/figs/vit/cm_vit_subject_5_50_epochs_20260805_204245.png
+Saved model to: results/models/vit/vit_perp_subject_5_50_epochs_320px_attn_True_20260805_204245.keras
+-- saving JSON results to 'results/metrics/vit/metrics_vit_subject_5_50_epochs_20260805_204245.json'...
+Saved metrics JSON to: results/metrics/vit/metrics_vit_subject_5_50_epochs_20260805_204245.json
+
+Process finished with exit code 0
