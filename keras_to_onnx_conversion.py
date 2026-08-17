@@ -2,6 +2,16 @@ import os
 from datetime import datetime
 from typing import Any
 
+# fix error when importing tf2onnx:
+# AttributeError: module 'numpy' has no attribute 'bool'
+import numpy as np
+# Manually restore the missing aliases expected by tf2onnx
+if not hasattr(np, 'bool'):
+    np.bool = bool
+if not hasattr(np, 'object'):
+    np.object = object
+
+
 import tensorflow as tf
 from numpy import signedinteger
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix
@@ -15,8 +25,12 @@ import config
 from ultrasound_gesture_cnn_classification import load_subject_arrays
 from visualizations import save_confusion_matrix_png
 
-keras_model_filename = "cnn_perp_subject_4_200_epochs_224px_20260804_124025.keras"
+# on Studio
+# keras_model_filename = "cnn_perp_subject_4_200_epochs_224px_20260804_124025.keras"
 # keras_model_filename = "cnn_perp_subject_4_100_epochs_224px_20260808_223847.keras"
+# on MacBook Pro
+# keras_model_filename = "cnn_perp_subject_4_200_epochs_224px_20260803_222438.keras"
+keras_model_filename = "cnn_perp_subject_4_200_epochs_224px_20260815_183827.keras"
 keras_model_folder_path = "results/models/cnn/"
 keras_model_filepath = os.path.join(keras_model_folder_path, keras_model_filename)
 
@@ -56,8 +70,8 @@ input_signature = [tf.TensorSpec([None] + list(input_shape), tf.float32, name="i
 onnx_model, _ = tf2onnx.convert.from_keras(
     model,
     input_signature=input_signature,
-    # opset=13
-    opset=15
+    opset=13
+    # opset=15
     # opset=16
 )
 
