@@ -188,20 +188,24 @@ def main():
     # NOTE: rbf can consume more RAM than linear. In case of exit code 137 (Out Of Memory error),
     # reduce the number of training samples and/or switch to a linear kernel.
     default_kernel: str = "linear" # one of ["linear", "rbf"]
-    default_training_set_size: int = 20 # -1 for unrestricted, 4800 in the actual set
+    default_training_set_size: int = 1000 # -1 for unrestricted, 4800 in the actual set
     # default_subject_id: str = "1"
     # default_subject_id: str = "2"
     # default_subject_id: str = "3"
-    # default_subject_id: str = "4" # done (increase training details?)
-    default_subject_id: str = "5"
+    default_subject_id: str = "4" # done (increase training details?)
+    # default_subject_id: str = "5"
     # default_subject_id: str = "6"
     default_metrics_filepath: str = f"results/metrics/svc/metrics_svc_subject_{default_subject_id}_{default_kernel}_kernel_{default_training_set_size}_training_samples_{file_datetime}.json"
     default_confusion_matrix_filepath: str = f"results/figs/svc/cm_svc_subject_{default_subject_id}_{default_kernel}_kernel_{default_training_set_size}_training_samples_{file_datetime}.png"
+    default_serialized_cm_filepath: str = f"results/serialized/svc/cm_svc_subject_{default_subject_id}_{default_kernel}_kernel_{default_training_set_size}_training_samples_{file_datetime}.npy"
+    default_cm_labelled_filepath: str = f"results/figs/svc/cm_svc_subject_{default_subject_id}_{default_kernel}_kernel_{default_training_set_size}_training_samples_{file_datetime}_labelled.png"
 
     # empty string for save or load model will skip save or load
-    default_save_model: str = f"results/models/svc/svc_{default_mode}_subject_{default_subject_id}_{default_kernel}_kernel_{default_training_set_size}_training_samples_{file_datetime}.keras"
+    # default_save_model: str = f"results/models/svc/svc_{default_mode}_subject_{default_subject_id}_{default_kernel}_kernel_{default_training_set_size}_training_samples_{file_datetime}.keras"
+    default_save_model: str = f"results/models/svc/svc_{default_mode}_subject_{default_subject_id}_{default_kernel}_kernel_{default_training_set_size}_training_samples_{file_datetime}.joblib"
     # default_save_model: str = ""
-    # default_load_model: str = f"results/models/svc/svc_perp_subject_2_1000_training_samples_20260717_191619.keras"
+    # default_load_model: str = f"results/models/svc/svc_perp_subject_1_linear_kernel_500_training_samples_20260815_155235.joblib"
+    # default_load_model: str = f"results/models/svc/svc_perp_subject_1_linear_kernel_2_training_samples_20260815_170742.joblib"
     default_load_model: str = ""
 
     ap = argparse.ArgumentParser(description="SVM gesture classifier (single subject) with metrics + artifacts.")
@@ -231,6 +235,7 @@ def main():
     ap.add_argument("--save-model", type=str, default=default_save_model, help="Path to save .joblib model.")
     ap.add_argument("--out", type=str, default=default_metrics_filepath, help="Path to save metrics JSON.")
     ap.add_argument("--cm", type=str, default=default_confusion_matrix_filepath, help="Path to save confusion matrix PNG.")
+    ap.add_argument("--serialized-cm", type=str, default=default_serialized_cm_filepath, help="Path to save serialized confusion matrix data.")
     ap.add_argument("--load-model", type=str, default=default_load_model, help="Load a .joblib model and skip training.")
 
     args = ap.parse_args()
@@ -274,7 +279,7 @@ def main():
 
     # Build / load
     if args.load_model and os.path.isfile(args.load_model):
-        print(f"Loading SVM model from: {args.load_model}")
+        print(f"Loading SVC model from: {args.load_model}")
         clf = joblib.load(args.load_model)
         trained = True
     else:
@@ -323,11 +328,13 @@ def main():
             print(f"pipeline has named steps:")
             for step_name, step in clf.named_steps.items():
                 print(f"  {step_name}: {step}")
-            print(f"svc step has methods:")
-            for method_name in dir(clf.named_steps['svc']):
-                print(f"  {method_name}")
-            svc_model: keras.Model = clf.named_steps['svc'].svc_
+            # print(f"svc step has methods:")
+            # for method_name in dir(clf.named_steps['svc']):
+            #     print(f"  {method_name}")
+            # svc_model: keras.Model = clf.named_steps['svc'].svc_
             # svc_model.save(args.save_model)
+            joblib.dump(clf, args.save_model)
+            print(f"Model saved to {args.save_model}")
 
     # Predict & Metrics
     print(f"\n[{args.mode}/{args.subject}] Predicting and calculating metrics on {len(x_test)} test samples...")
@@ -360,7 +367,7 @@ def main():
 
         confusion_matrix_title: str = "SVC Confusion Matrix"
         training_details['test_accuracy'] = f"{acc:.4f}"
-        save_confusion_matrix_png(y_test, y_pred, path=args.cm, cm_title=confusion_matrix_title, details=training_details)
+        save_confusion_matrix_png(y_test, y_pred, path=args.cm, serialized_cm_path=args.serialized_cm, labelled_cm_path=default_cm_labelled_filepath, cm_title=confusion_matrix_title, details=training_details)
         print(f"Saved confusion matrix to: {args.cm}")
 
     if args.save_model and not trained:
