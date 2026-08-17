@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from keras.src.callbacks import History
 from matplotlib import pyplot as plt
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.font_manager as fm
 
 from utilities import ensure_dir
@@ -33,7 +33,7 @@ def train_test_duration_display(training_duration: timedelta, subsecond_precisio
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{subseconds_int:02d}" # pad each time place with leading zeros
 
 
-def save_confusion_matrix_png(y_true, y_pred, path, cm_title: str|None=None, details: dict|None=None, data_type=int):
+def save_confusion_matrix_png(y_true, y_pred, path, serialized_cm_path: str|None=None, labelled_cm_path: str|None=None, cm_title: str|None=None, details: dict|None=None, data_type=int):
     import sklearn
     print(sklearn.__version__)
     print(sklearn.metrics.confusion_matrix.__module__)
@@ -47,11 +47,18 @@ def save_confusion_matrix_png(y_true, y_pred, path, cm_title: str|None=None, det
     ensure_dir(path)
     cm = confusion_matrix(y_true, y_pred)
     # cm = confusion_matrix(y_true, y_pred, sample_weight=np.ones_like(y_true, dtype=float))
-    
+
+
+
     if cm_title is None:
         cm_title = "Confusion Matrix"
     
     print(f"{cm_title}:\n{cm}")
+
+    # save confusion matrix to disk
+    if serialized_cm_path:
+        ensure_dir(serialized_cm_path)
+        np.save(serialized_cm_path, cm)
     
     set_global_matplotlib_font()
     caption_font_size = 10
@@ -59,8 +66,28 @@ def save_confusion_matrix_png(y_true, y_pred, path, cm_title: str|None=None, det
     if details is not None:
         caption = create_caption_from_details(details)
     else:
-        caption = ""
+        dummy_details = {
+            "key1": "value1",
+            "second_key": "second_value",
+            "third_key": 123.456,
+        }
+        # caption = ""
+        caption = create_caption_from_details(dummy_details)
 
+    # print scikit-learn confusion matrix
+    print(f"printing scikit-learn confusion_matrix")
+    fig1, _ = plt.subplots(figsize=(10,8), layout='constrained')
+    sklearn_cm_display = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[x for x in range(12)])
+    sklearn_cm_display.plot(cmap="viridis")
+    plt.figtext(x=0.5, y=-0.75, s=caption, wrap=True, horizontalalignment='center', fontsize=caption_font_size)
+    plt.tight_layout()
+    if cm_title:
+        plt.title(cm_title)
+    if labelled_cm_path:
+        plt.savefig(labelled_cm_path, bbox_inches='tight')
+    plt.show(bbox_inches='tight')
+
+    # print matplotlib confusion matrix
     fig, ax = plt.subplots(figsize=(10, 12))
     im = ax.imshow(cm, interpolation="nearest")
     ax.set_title(cm_title)
@@ -71,7 +98,7 @@ def save_confusion_matrix_png(y_true, y_pred, path, cm_title: str|None=None, det
     ax.set_xticks(np.arange(len(np.unique(y_pred))))
     ax.set_yticks(np.arange(len(np.unique(y_true))))
     fig.tight_layout()
-    plt.savefig(path, dpi=150)
+    plt.savefig(path, dpi=150, bbox_inches='tight')
     plt.close(fig)
 
 
