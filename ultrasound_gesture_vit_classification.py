@@ -450,9 +450,16 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
     # set overlay alphas
     heatmap_alpha_low: float = 0.35
     heatmap_alpha_high: float = 0.60
-
-    # Create an exact 800x600 pixel canvas
-    fig, ax = plt.subplots(figsize=(800 * px, 600 * px))
+    
+    if details is None:
+        details = {
+            'subject': 'Subject_1',
+            'epochs': 50,
+            'dummy_key': 'dummy_value',
+            'key': 'value',
+            'key2': 'value2',
+            'key3': 234.987,
+        }
 
     print(f"image.shape: {image.shape}")
     
@@ -478,6 +485,7 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
     # 5. Reshape the 1D patch weights back into the 2D grid spatial layout
     h, w, _ = image.shape
     grid_size = h // patch_size
+    print(f"grid_size: {grid_size}")
     heatmap = patch_weights.reshape((grid_size, grid_size))
     print(f"heatmap.shape: {heatmap.shape}")
     print(f"heatmap.dtype: {heatmap.dtype}")
@@ -488,12 +496,42 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
     # convert data type for heatmap for compatibility with cv2.resize
     heatmap = heatmap.astype("float32")
     
+    patches_per_dimension: int = grid_size
+    # patch_lines: list[int] = [round(patch_size * x) for x in range(patches_per_dimension + 1)]
+    patch_lines: list[int] = [x for x in range(patches_per_dimension + 1)]
+    print(f"patch_lines: {patch_lines}") 
+    patch_attention_map_title: str
+    if details:
+        subject_text: str = f" for {details['subject']}" if 'subject' in details else ""
+        patch_attention_map_title = f"ViT attention map (all heads){subject_text}"
+    else:
+        patch_attention_map_title = "ViT attention map (all heads)"
+    
+    attention_map_image_filepath: str = f"results/figs/vit/attn_vit_{details['subject']}_{details['epochs']}_epochs_{patches_per_dimension}_patches_per_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    attention_map_tensor_filepath: str = f"results/attention/vit/attn_vit_{details['subject']}_{details['epochs']}_epochs_{patches_per_dimension}_patches_per_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
+    
+    # save the attention map tensor for later use
+    np.save(attention_map_tensor_filepath, heatmap)
+
+    # create plot caption
+    if details is not None:
+        caption = create_caption_from_details(details)
+    else:
+        caption = ""
+
     print(f"converted heatmap:")
-    plt.title("converted heatmap")
+    plt.title(patch_attention_map_title)
     plt.imshow(heatmap, cmap="inferno")
+    plt.xlabel(f"patch column\n{caption}")
+    plt.ylabel("patch row")
+    plt.xticks(patch_lines, labels=patch_lines, rotation=90)
+    plt.yticks(patch_lines)
+    plt.colorbar()
     plt.show()
+    plt.tight_layout()
     print(f"converted heatmap shape: {heatmap.shape}")
     print(f"converted heatmap dtype: {heatmap.dtype}")
+    plt.savefig(attention_map_image_filepath, dpi=150, bbox_inches='tight')
 
     # 6. Resize heatmap to match original image dimensions using cubic interpolation
     heatmap = cv2.resize(heatmap, (w, h), interpolation=cv2.INTER_CUBIC)
@@ -521,13 +559,7 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
     # }
     # end TEST
 
-    # create plot caption
-    if details is not None:
-        caption = create_caption_from_details(details)
-    else:
-        caption = ""
-
-    # 8. Render the plot side-by-side: Original vs. Overlaid Heatmap
+        # 8. Render the plot side-by-side: Original vs. Overlaid Heatmap
     # if details is not None:
         # add space for the details box
         # plt.figure(figsize=(10, 12))
@@ -713,12 +745,12 @@ def main():
 
     default_mode: str = "perp" # ["perp", "mirror"]
     # default_subject_id: str = "6" # done
-    default_subject_id: str = "5" # 50 epochs done. Do 500 and series
+    # default_subject_id: str = "5" # 50 epochs done. Do 500 and series
     # default_subject_id: str = "4" # done
     # default_subject_id: str = "3" # done
-    # default_subject_id: str = "2" # done (redo history plot)
+    default_subject_id: str = "2" # done (redo history plot)
     # default_subject_id: str = "1" # done
-    default_epochs: int = 200 # paper used 500 (?)
+    default_epochs: int = 50 # paper used 500 (?)
     default_image_size: int = 224 # was 320, raw image is 640
     default_progress: str = "none" # ["tqdm", "none"]
     default_learning_rate: float = 0.0001 # was 0.0005
@@ -745,6 +777,7 @@ def main():
     # default_load_model: str = f"results/models/vit/vit_perp_subject_4_1_epochs_320px_20260802_134208.keras"
     # default_load_model: str = f"results/models/vit/vit_perp_subject_4_1_epochs_320px_20260802_181936.keras"
     # default_load_model: str = f"results/models/vit/vit_perp_subject_2_1_epochs_320px_attn_True_20260806_145000.keras"
+    # default_load_model: str = f"results/models/vit/vit_perp_subject_1_50_epochs_224px_14_patch_size_attn_True_20260815_115505.keras"
     default_load_model: str = ""
 
     default_metrics_filepath: str = f"results/metrics/vit/metrics_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.json"
@@ -753,6 +786,8 @@ def main():
     default_attention_map_series_folder_path: str = f"results/attention/vit/series/{file_datetime}/"
     # for saving the attention map from the trained model
     default_attention_map_filepath: str = f"results/figs/vit/attn_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
+    default_attn_plot_folder: str = "results/figs/vit"
+    default_attn_plot_filename: str = f"attn_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
 
     # TODO: include global tensorflow precision setting in training details
     # TODO: include model type in title for loss + acc plots
@@ -1069,7 +1104,8 @@ def main():
     attn_plot_details: dict|None = None
     if not trained:
         attn_plot_details = training_details
-    plot_attention_map(model=model, image=test_image_tensor, patch_size=default_patch_size, details=attn_plot_details, save_plot=default_save_heatmap, plot_filename=args.attn_map, heatmap_cmap=heatmap_colormap)
+    attn_plot_folder: str = "results/figs/vit" 
+    plot_attention_map(model=model, image=test_image_tensor, patch_size=default_patch_size, details=attn_plot_details, save_plot=default_save_heatmap, plot_folder_path=attn_plot_folder, plot_filename=default_attn_plot_filename, heatmap_cmap=heatmap_colormap)
     print(f"done plotting attention map")
 
     # Save CM and model/metrics if requested
