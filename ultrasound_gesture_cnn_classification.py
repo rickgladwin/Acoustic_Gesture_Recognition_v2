@@ -239,15 +239,17 @@ def main():
     default_dropout_rate: float = 0.4 # was 0.5
     default_augmentations: list[str] = [""]
     # empty string for save or load model will skip save or load
-    # default_save_model: str = f"results/models/cnn/cnn_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{default_image_size}px_{file_datetime}.keras"
-    default_save_model: str = ""
+    default_save_model: str = f"results/models/cnn/cnn_{default_mode}_subject_{default_subject_id}_{default_epochs}_epochs_{default_image_size}px_{file_datetime}.keras"
+    # default_save_model: str = ""
     # default_load_model: str = f"results/models/cnn/cnn_perp_subject_4_200_epochs_20260719_133931.keras"
     # default_load_model: str = f"results/models/cnn/cnn_perp_subject_4_50_epochs_224px_20260802_215005.keras"
-    default_load_model: str = f"results/models/cnn/cnn_perp_subject_4_200_epochs_224px_20260804_124025.keras"
-    # default_load_model: str = ""
-    default_metrics_filepath: str = f"results/metrics/cnn/metrics_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.json"
-    default_confusion_matrix_filepath: str = f"results/figs/cnn/cm_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
-    
+    # default_load_model: str = f"results/models/cnn/cnn_perp_subject_4_200_epochs_224px_20260804_124025.keras"
+    default_load_model: str = ""
+    default_metrics_filepath: str = f"results/metrics/cnn/metrics_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{default_learning_rate}_lr_{default_dropout_rate}_drop_{file_datetime}.json"
+    default_confusion_matrix_filepath: str = f"results/figs/cnn/cm_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{default_learning_rate}_lr_{default_dropout_rate}_drop_{file_datetime}.png"
+    default_serialized_cm_filepath: str = f"results/serialized/cnn/cm_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{default_learning_rate}_lr_{default_dropout_rate}_drop_{file_datetime}.npy"
+    default_cm_labelled_filepath: str = f"results/figs/cnn/cm_cnn_subject_{default_subject_id}_{default_epochs}_epochs_{default_learning_rate}_lr_{default_dropout_rate}_drop_{file_datetime}_labelled.png"
+
     # reducing learning rate from 1e-3 to 1e-4 resulted in a smoother validation accuracy curve during training
     
     # TODO: introduce learning rate decay to reduce variability in the validation accuracy during training?
@@ -474,7 +476,7 @@ def main():
     # Save artifacts
     if args.cm:
         confusion_matrix_title: str = f"CNN Confusion Matrix"
-        save_confusion_matrix_png(y_test, y_pred, args.cm, cm_title=confusion_matrix_title, details=training_details)
+        save_confusion_matrix_png(y_test, y_pred, args.cm, cm_title=confusion_matrix_title, serialized_cm_path=default_serialized_cm_filepath, labelled_cm_path=default_cm_labelled_filepath, details=training_details)
         print(f"Saved confusion matrix to: {args.cm}")
 
     if args.save_model:
