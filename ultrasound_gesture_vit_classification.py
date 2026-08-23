@@ -21,6 +21,7 @@ import matplotlib.font_manager as fm
 # see https://share.google/aimode/UwSqy8Wxk8WaXGWHX
 from tensorflow.keras import mixed_precision
 
+from attention_mapping import import_attention_mask, attention_tensor_from_2d_mask
 # prevent metal optimizer takeover from keras (version 2.13.1 uses has bugs)
 # from keras.src.optimizers import __init__ as keras_init
 
@@ -204,12 +205,24 @@ class MacCompatibleLion(tf.keras.optimizers.Optimizer):
         return self._underlying_optimizer.apply_gradients(grads_and_vars, name=name)
 
 
-def build_vit_with_attention_output(input_shape, num_classes,
-              patch_size=32, projection_dim=64, num_heads=8,
-              transformer_layers=6, transformer_units=(128, 64),
-              mlp_head_units=(512, 256), learning_rate: float=1e-3,
-              weight_decay: float=0.1, 
-              beta_1: float=0.9, beta_2: float=0.99) -> keras.Model:
+def build_vit_with_attention_output(
+        input_shape,
+        num_classes,
+        patch_size=32,
+        projection_dim=64,
+        num_heads=8,
+        transformer_layers=6,
+        transformer_units=(128, 64),
+        mlp_head_units=(512, 256),
+        learning_rate: float=1e-3,
+        weight_decay: float=0.1, 
+        beta_1: float=0.9, 
+        beta_2: float=0.99,
+        apply_attention_mask: bool=False,
+        applied_attention_mask_path: str|None=None,
+        apply_attention_map: bool=False,
+        applied_attention_map_path: str|None=None,
+    ) -> keras.Model:
     """
     Build a compact ViT classifier (no CLS token; flatten + MLP head).
     Provide attention information for visualizing and using attention maps.
@@ -228,6 +241,36 @@ def build_vit_with_attention_output(input_shape, num_classes,
 
     # Initialize a variable to store the final attention map
     final_attention_scores = None
+    
+    patches_per_dim: int = int(np.sqrt(num_patches))
+    
+    # default attention mask is "all patches"
+    # attention_mask shape is (batch_size, num_patches, num_patches), or if broadcasting, (num_patches, num_patches)
+    attention_mask: np.ndarray = np.ones((patches_per_dim, patches_per_dim))
+    
+    print(f"default attention_mask shape: {attention_mask.shape}")
+    
+    if apply_attention_mask:
+        if applied_attention_mask_path is None:
+            raise ValueError("missing applied_attention_mask_path argument in build_vit_with_attention_output() call")
+        attention_mask: np.ndarray = import_attention_mask(path=applied_attention_mask_path, show_plot=True)
+    
+    print(f"attention_mask shape: {attention_mask.shape}")
+    
+    # NOTE:
+    # default (all 1's) attention mask works:
+    # -- input shape: (224, 224, 1)
+    # x_test shape: (1200, 224, 224, 1)
+    # -- train/val split: 4320 train samples, 480 val samples
+    # default attention_mask shape: (256, 256)
+    # attention_mask shape: (256, 256)
+    #
+    # imported (16x16 boolean) attention mask doesn't work:
+    
+    
+    # create an attention tensor, assuming the attention mask is the same for every image in the batch
+    attention_tensor: tf.Tensor = attention_tensor_from_2d_mask(attention_mask)
+    print(f"attention_tensor shape: {attention_tensor.shape}")
 
     for i in range(transformer_layers):
         x1 = keras.layers.LayerNormalization(epsilon=1e-6)(encoded)
@@ -243,10 +286,12 @@ def build_vit_with_attention_output(input_shape, num_classes,
         # Call MHA and conditionally fetch attention scores
         if is_final_layer:
             attn_output, final_attention_scores = attn_layer(
-                query=x1, value=x1, return_attention_scores=True
+                # query=x1, value=x1, return_attention_scores=True
+                query=x1, value=x1, return_attention_scores=True, attention_mask=attention_tensor
             )
         else:
-            attn_output = attn_layer(query=x1, value=x1, return_attention_scores=False)
+            # attn_output = attn_layer(query=x1, value=x1, return_attention_scores=False)
+            attn_output = attn_layer(query=x1, value=x1, return_attention_scores=False, attention_mask=attention_tensor)
 
         x2 = keras.layers.Add()([attn_output, encoded])
         x3 = keras.layers.LayerNormalization(epsilon=1e-6)(x2)
@@ -279,9 +324,15 @@ def build_vit_with_attention_output(input_shape, num_classes,
     # )
     
     # model_optimizer: tf.keras.optimizers.Optimizer = tf.keras.optimizers.AdamW(
-    model_optimizer: tf.keras.optimizers.Optimizer = tf.keras.optimizers.Adam(
+    # model_optimizer: tf.keras.optimizers.Optimizer = tf.keras.optimizers.Adam(
+    #     learning_rate=learning_rate,
+    #     weight_decay=weight_decay, 
+    # )
+    
+    # use legacy Adam to fix slowdown on Mac silicon
+    model_optimizer = tf.keras.optimizers.legacy.Adam(
         learning_rate=learning_rate,
-        weight_decay=weight_decay, 
+        decay=weight_decay,
     )
 
     # model_optimizer = tf.keras.mixed_precision.legacy.LossScaleOptimizer(
@@ -336,7 +387,9 @@ def get_vit_attention_model(existing_model):
 def build_vit(input_shape, num_classes,
               patch_size=32, projection_dim=64, num_heads=8,
               transformer_layers=6, transformer_units=(128, 64),
-              mlp_head_units=(512, 256), learning_rate: float=1e-3) -> keras.Model:
+              mlp_head_units=(512, 256), learning_rate: float=1e-3,
+              apply_attention_mask: bool = False,
+              applied_attention_mask_path: str|None = None) -> keras.Model:
     """Build a compact ViT classifier (no CLS token; flatten + MLP head)."""
     h, w, _ = input_shape
     num_patches = (h // patch_size) * (w // patch_size)
@@ -426,7 +479,7 @@ import matplotlib.pyplot as plt
 import cv2
 
 
-def plot_attention_map(model, image, patch_size=32, details: dict|None=None, save_plot=True, save_plot_series: bool=False, plot_folder_path: str | None=None, plot_filename: str | None=None, heatmap_cmap: str= "jet"):
+def plot_attention_map(model, image, patch_size=32, details: dict|None=None, save_plot=True, save_plot_series: bool=False, plot_folder_path: str | None=None, plot_filename: str | None=None, heatmap_cmap: str= "inferno") -> None:
     # modified from code extracted from Google Gemini 3 (2026)
     """
     Extracts attention scores, averages heads, and overlays an attention heatmap on the image.
@@ -435,6 +488,13 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
         model: The trained multi-output ViT model.
         image: A single numpy image array of shape (H, W, C). This is an example image from the dataset on which the model was trained.
         patch_size: The patch size used during model compilation.
+        details: A dictionary containing details about the training run and model, such as subject, learning rate, training duration, final test accuracy, etc.
+        save_plot: Whether to save the plot to a file.
+        save_plot_series: Whether to save successive attention maps as a series, where the attention maps have been generated at multiple epochs during training.
+        plot_folder_path: The path to the folder where the plot will be saved.
+        plot_filename: The name of the file where the plot will be saved.
+        heatmap_cmap: The colormap to use for the heatmap.
+
     """
     
     set_global_matplotlib_font()
@@ -453,14 +513,26 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
     
     if details is None:
         details = {
-            'subject': 'Subject_1',
-            'epochs': 50,
-            'dummy_key': 'dummy_value',
-            'key': 'value',
-            'key2': 'value2',
-            'key3': 234.987,
+            "DUMMY": "DUMMY",
+            "subject": "Subject_3",
+            "image_dimensions": "224x224",
+            "patches_per_dim": "16",
+            "epochs": "200",
+            "batch_size": "256",
+            "learning_rate": "0.0001",
+            "val_split": "0.1",
+            "training_set_size": "4320",
+            "training_duration": "08:08:40.274",
+            "max_val_acc": "0.9875",
+            "max_val_acc_epoch": "13",
+            "testing_set_size": "1200",
+            "testing-duration": "00:00:20.846",
+            "processor_type": "Apple M4 Max",
+            "cpu_cores": "16",
+            "gpu_cores": "40",
+            "test_accuracy": "0.9733",
         }
-
+    
     print(f"image.shape: {image.shape}")
     
     # 1. Prepare image for prediction (add batch dimension: 1, H, W, C)
@@ -503,15 +575,22 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
     patch_attention_map_title: str
     if details:
         subject_text: str = f" for {details['subject']}" if 'subject' in details else ""
-        patch_attention_map_title = f"ViT attention map (all heads){subject_text}"
+        patch_attention_map_title = f"ViT normalized attention map\n(all heads){subject_text}"
     else:
-        patch_attention_map_title = "ViT attention map (all heads)"
+        patch_attention_map_title = "ViT normalized attention map\n(all heads)"
     
     attention_map_image_filepath: str = f"results/figs/vit/attn_vit_{details['subject']}_{details['epochs']}_epochs_{patches_per_dimension}_patches_per_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
     attention_map_tensor_filepath: str = f"results/attention/vit/attn_vit_{details['subject']}_{details['epochs']}_epochs_{patches_per_dimension}_patches_per_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}"
     
     # save the attention map tensor for later use
     np.save(attention_map_tensor_filepath, heatmap)
+   
+    print(f"heatmap max: {np.max(heatmap)}")
+    print(f"heatmap min: {np.min(heatmap)}")
+    # normalize to [0,1]
+    heat_max = np.max(heatmap)
+    heat_min = np.min(heatmap)
+    heatmap_normalized = (heatmap - heat_min) / (heat_max - heat_min)
 
     # create plot caption
     if details is not None:
@@ -519,18 +598,30 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
     else:
         caption = ""
 
-    print(f"converted heatmap:")
-    plt.title(patch_attention_map_title)
-    plt.imshow(heatmap, cmap="inferno")
+    boundaries = np.arange(-0.5, patches_per_dimension, 1)
+    print(f"boundaries: {boundaries}")
+    
+    # tick_locations = [x + 0.5 for x in range(16)]
+    tick_locations = [0, 16]
+    # tick_labels = [str(x) for x in range(16)]
+    tick_labels = ["0", "16"]
+    
+    plt.figure(figsize=(13, 10))
+    plt.title(patch_attention_map_title, wrap=True)
+    plt.imshow(heatmap_normalized, cmap="inferno", extent=[0, 16, 0, 16])
     plt.xlabel(f"patch column\n{caption}")
     plt.ylabel("patch row")
-    plt.xticks(patch_lines, labels=patch_lines, rotation=90)
-    plt.yticks(patch_lines)
+    # plt.xticks(boundaries, labels=[int(b + 0.5) for b in boundaries])
+    # plt.yticks(boundaries, labels=[int(b + 0.5) for b in boundaries])
+    # plt.xticklabels([int(b + 0.5) for b in boundaries])
+    # plt.yticklabels([int(b + 0.5) for b in boundaries])
+    plt.xticks(tick_locations, labels=tick_labels)
+    plt.yticks(tick_locations, labels=tick_labels)
     plt.colorbar()
-    plt.show()
     plt.tight_layout()
     print(f"converted heatmap shape: {heatmap.shape}")
     print(f"converted heatmap dtype: {heatmap.dtype}")
+    plt.show()
     plt.savefig(attention_map_image_filepath, dpi=150, bbox_inches='tight')
 
     # 6. Resize heatmap to match original image dimensions using cubic interpolation
@@ -675,7 +766,7 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
         print(f"Saving plot to {plot_filename}")
         plt.savefig(plot_filename, dpi=150, bbox_inches='tight')
         # TEST
-        plt.show()
+        # plt.show()
         # end TEST
     else:
         plt.show()
@@ -746,11 +837,11 @@ def main():
     default_mode: str = "perp" # ["perp", "mirror"]
     # default_subject_id: str = "6" # done
     # default_subject_id: str = "5" # 50 epochs done. Do 500 and series
-    # default_subject_id: str = "4" # done
+    default_subject_id: str = "4" # done
     # default_subject_id: str = "3" # done
-    default_subject_id: str = "2" # done (redo history plot)
+    # default_subject_id: str = "2" # done (redo history plot)
     # default_subject_id: str = "1" # done
-    default_epochs: int = 50 # paper used 500 (?)
+    default_epochs: int = 15 # paper used 500 (?)
     default_image_size: int = 224 # was 320, raw image is 640
     default_progress: str = "none" # ["tqdm", "none"]
     default_learning_rate: float = 0.0001 # was 0.0005
@@ -788,6 +879,12 @@ def main():
     default_attention_map_filepath: str = f"results/figs/vit/attn_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
     default_attn_plot_folder: str = "results/figs/vit"
     default_attn_plot_filename: str = f"attn_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
+    
+    default_apply_attention_mask: bool = True
+    default_applied_attention_mask_filepath: str = '/Users/rickgladwin/Code/u_of_hull/dissertation/Integrated-Decision-Gradients/results/attention_maps/attn_boolean_map_threshold=0p45_20260817_005014.npy'
+    
+    default_apply_attention_map: bool = False
+    default_applied_attention_map_filepath: str = f"results/attention/vit/attn_map_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
 
     # TODO: include global tensorflow precision setting in training details
     # TODO: include model type in title for loss + acc plots
@@ -829,6 +926,11 @@ def main():
     parser.add_argument("--output-attention-maps", type=bool, default=default_output_attention_maps, help="Whether to output attention maps when the model is built")
     parser.add_argument("--attn-map-series-folder", type=str, default=default_attention_map_series_folder_path, help="Path to save intermediate attention map series, e.g., results/figs/attention/series/")
     parser.add_argument("--attn-map", type=str, default=default_attention_map_filepath, help="Path to save final attention map PNG, e.g., results/figs/subject1_vit_attn.png")
+    
+    parser.add_argument("--apply-attention-mask", type=bool, default=default_apply_attention_mask, help="Whether to apply attention mask to model")
+    parser.add_argument("--applied-attention-mask-path", type=str, default=default_applied_attention_mask_filepath, help="Path from which to load applied attention mask npy file")
+    parser.add_argument("--apply-attention-map", type=bool, default=default_apply_attention_map, help="Whether to apply attention map to model")
+    parser.add_argument("--applied-attention-map-path", type=str, default=default_applied_attention_map_filepath, help="Path from which to load applied attention map npy file")
 
     args = parser.parse_args()
     set_seed(args.seed)
@@ -920,6 +1022,10 @@ def main():
             mlp_head_units=(512, 256),
             learning_rate=default_learning_rate,
             weight_decay=default_weight_decay,
+            apply_attention_mask=args.apply_attention_mask,
+            # TODO: implement attention mask loader for all layers
+            # TODO: implement attention mask loader for first layer only?
+            applied_attention_mask_path=args.applied_attention_mask_path,
         )
         trained = False
 
@@ -982,16 +1088,43 @@ def main():
         worker_count = process_pool_size(reserve_cores_count=1, verbose=True)
         # Note: with verbose=0, Keras won’t print per-batch/epoch lines; tqdm shows the progress instead.
         train_start_datetime = datetime.now()
+        
+        # optimize for GPU using tensor pre-processing
+        train_ds = (
+            tf.data.Dataset.from_tensor_slices((x_train_fit, y_train_fit))
+            .shuffle(buffer_size=len(x_train_fit), seed=args.seed, reshuffle_each_iteration=True)
+            .batch(args.batch_size, drop_remainder=True)
+            .cache()
+            .prefetch(tf.data.AUTOTUNE)
+        )
+
+        val_ds = (
+            tf.data.Dataset.from_tensor_slices((x_val, y_val))
+            .batch(args.batch_size)
+            .cache()
+            .prefetch(tf.data.AUTOTUNE)
+        )
+
         history = model.fit(
-            x_train_fit, y_train_fit,
-            batch_size=args.batch_size,
+            train_ds,
             epochs=args.epochs,
-            validation_data=(x_val, y_val),
+            validation_data=val_ds,
             callbacks=callbacks,
             verbose=verbose,
-            use_multiprocessing=True,
-            workers=worker_count,
         )
+        
+        # model training without tensor preprocessing
+        # history = model.fit(
+        #     x_train_fit, y_train_fit,
+        #     batch_size=args.batch_size,
+        #     epochs=args.epochs,
+        #     validation_data=(x_val, y_val),
+        #     callbacks=callbacks,
+        #     verbose=verbose,
+        #     use_multiprocessing=True,
+        #     workers=worker_count,
+        # )
+        
         training_details['training_set_size'] = len(x_train_fit)
         train_end_datetime = datetime.now()
         training_duration = train_test_duration_display(train_end_datetime - train_start_datetime)
@@ -1111,7 +1244,7 @@ def main():
     # Save CM and model/metrics if requested
     if args.cm:
         confusion_matrix_title: str = f"ViT Confusion Matrix"
-        save_confusion_matrix_png(y_test, y_pred, args.cm, cm_title=confusion_matrix_title, details=training_details)
+        save_confusion_matrix_png(y_true=y_test, y_pred=y_pred, path=args.cm, labelled_cm_path=args.cm, cm_title=confusion_matrix_title, details=training_details)
         print(f"Saved confusion matrix to: {args.cm}")
 
     if args.save_model:

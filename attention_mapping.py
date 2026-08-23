@@ -2,6 +2,7 @@
 import enum
 import numpy as np
 from matplotlib import pyplot as plt
+import tensorflow as tf
 
 
 class AttentionArrayType(enum.Enum):
@@ -61,6 +62,32 @@ def display_plot(attention_object: np.ndarray, attention_object_type: AttentionA
     plt.show()
     
 
+def attention_tensor_from_2d_mask(attention_mask_array: np.ndarray) -> tf.Tensor:
+    """
+    Converts a 2D attention mask into a 3D attention tensor for use in a MultiHeadAttention layer.
+    NOTE: Uses broadcasting with the assumption that the attention mask for every image in the batch uses the same attention mask.
+    """
+    # convert the NxN attention mask array into a length N**2 1D array 
+    attention_mask_array_1d: np.ndarray = attention_mask_array.flatten()
+    print(f"attention_mask_array_1d shape: {attention_mask_array_1d.shape}")
+    print(f"attention_mask_array_1d:\n{attention_mask_array_1d}")
+    
+    
+    # assume the 1D attention mask applies to every image in the batch, therefore we can use broadcasting
+    # and repeat the 1D attention mask array B times, where B is the batch size.
+    # The `logical_and` call creates a self-attention tensor.
+    attention_tensor: tf.Tensor = tf.logical_and(
+        attention_mask_array_1d[:, tf.newaxis] == 1,
+        attention_mask_array_1d[tf.newaxis, :] == 1
+    )
+    plt.imshow(attention_tensor, cmap='gray', vmin=0, vmax=1)
+    plt.title("(patches_per_dim\u00B2) x (patches_per_dim\u00B2) attention tensor", wrap=True)
+    plt.xticks([16*x for x in range(17)], rotation=90)
+    plt.yticks([16*x for x in range(17)])
+    plt.show()
+    return attention_tensor
+    
+
 if __name__ == "__main__":
     # in-place tests
     # There are 4 types of attention maps and masks made from attribution maps:
@@ -72,7 +99,12 @@ if __name__ == "__main__":
     ## thresholded attention mask from attribution map
     test_attention_mask_filepath: str = '/Users/rickgladwin/Code/u_of_hull/dissertation/Integrated-Decision-Gradients/results/attention_maps/attn_boolean_map_threshold=0p45_20260817_005014.npy'
     print(f"importing {test_attention_mask_filepath}")
-    import_attention_mask(test_attention_mask_filepath, show_plot=True)
+    imported_attn_mask: np.ndarray = import_attention_mask(test_attention_mask_filepath, show_plot=True)
+    attn_tensor: tf.Tensor = attention_tensor_from_2d_mask(imported_attn_mask)
+    
+    # example "all patches" attention mask
+    all_patches_mask: np.ndarray = np.ones((16, 16), dtype=bool)
+    all_patches_attn_tensor: tf.Tensor = attention_tensor_from_2d_mask(all_patches_mask)
     
     ## high pass attention mask from attribution map
     # NOTE: this npy file will need to be converted to boolean values before use.
