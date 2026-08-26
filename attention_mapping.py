@@ -86,6 +86,30 @@ def attention_tensor_from_2d_mask(attention_mask_array: np.ndarray) -> tf.Tensor
     plt.yticks([16*x for x in range(17)])
     plt.show()
     return attention_tensor
+
+
+def spatial_bias_to_pairwise_bias(attention_bias_2d, strength=2.0):
+    """
+    Convert a spatial patch-importance map into a pairwise attention-logit bias.
+    Adapted from JetBrains AI Assistant (2026b)
+
+    Input:
+        attention_bias_2d: shape (grid_h, grid_w), values in [0, 1]
+
+    Output:
+        pairwise_bias: shape (num_patches, num_patches)
+    """
+
+    patch_bias = attention_bias_2d.astype("float32").reshape(-1)
+
+    # Center around 0 so low-bias patches are discouraged
+    # and high-bias patches are encouraged.
+    patch_bias = patch_bias - np.mean(patch_bias)
+
+    # Bias every query toward/away from each key patch.
+    pairwise_bias = np.tile(patch_bias[None, :], (len(patch_bias), 1))
+
+    return strength * pairwise_bias
     
 
 if __name__ == "__main__":
