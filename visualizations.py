@@ -268,6 +268,8 @@ def plot_history_separately(training_history: History, loss_plot_title: str|None
     else:
         training_acc_key = 'acc'
     
+    print(f"using training_acc_key '{training_acc_key}'")
+    
     if training_acc_key in training_history.history:
         ax2.plot(training_history.history[training_acc_key], label='Train Accuracy', color='blue', linewidth=1)
     
@@ -277,6 +279,8 @@ def plot_history_separately(training_history: History, loss_plot_title: str|None
         validation_acc_key = 'val_accuracy'
     else:
         validation_acc_key = 'val_acc'
+    
+    print(f"using vaidation_acc_key '{validation_acc_key}'")
     
     if validation_acc_key in training_history.history:
         ax2.plot(training_history.history[validation_acc_key], label='Val Accuracy', color='orange', linestyle='-', linewidth=1.5)
