@@ -17,6 +17,10 @@ import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 # import torch
 
+# these packages allow model architecture visualizations
+import pydot
+import graphviz
+
 # ViT optimizations
 # see https://share.google/aimode/UwSqy8Wxk8WaXGWHX
 from tensorflow.keras import mixed_precision
@@ -1415,8 +1419,8 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
 # ============================
 # Main
 # ============================
-def main():
-# def main(argv=None):
+# def main():
+def main(argv=None):
     # TODO: ** find any ultrasound ViT examples (with or without attention biasing)
 
     # TODO: research TOAST (TOp-down Attention STeering), a transfer learning method
@@ -1480,7 +1484,7 @@ def main():
     # default_subject_id: str = "3" # done
     # default_subject_id: str = "2" # done (redo history plot)
     # default_subject_id: str = "1" # done
-    default_epochs: int = 200 # paper used 200
+    default_epochs: int = 50 # paper used 200
     default_image_size: int = 224 # was 320, raw image is 640
     default_progress: str = "none" # ["tqdm", "none"]
     default_learning_rate: float = 0.0001 # was 0.0005
@@ -1529,12 +1533,24 @@ def main():
     default_applied_patch_bias_attention_map_filepath: str = f"/Users/rickgladwin/Code/u_of_hull/dissertation/Integrated-Decision-Gradients/results/attribution_maps/attrib_map_combo_sigmoid_x0=0p65_w=0p15_20260817_005014.npy"
     # default_applied_patch_bias_attention_map_filepath: str = f"/Users/rickgladwin/Code/u_of_hull/dissertation/Integrated-Decision-Gradients/results/attribution_maps/attrib_map_combo_norm_20260817_005014.npy"
     
-    default_attention_bias_type: str = "attn_bias_sigmoid"    # sigmoid attention bias applied to attention weights
-    # default_attention_bias_type: str = "attn_bias_combo"      # combined from all gestures (normalized, no filter) attention bias applied to attention weights
+    # default_attention_bias_type: str = "attn_bias_sigmoid"    # sigmoid attention bias applied to attention weights
+    default_attention_bias_type: str = "attn_bias_combo"      # combined from all gestures (normalized, no filter) attention bias applied to attention weights
     
     # when applying attention bias in the transformer layers,
     # the bias strength acts as a multiplier for the bias values.
-    default_attention_bias_strength: float = 2.0
+    default_attention_bias_strength: float = 20.0
+
+    # TODO: for at least one or two sets of configuration, run multiple test runs, plot the histories together, and
+    #  make a mean and variance calculation, in order to get a sense of how representative any of the test attention
+    #  scores we're getting are (how much variability is there, how much general meaning can we extract from the
+    #  results table)
+
+    # TODO: add an absolute accuracy change to the results table in addition to the relative accuracy change.
+
+    # TODO: get a muscle/tendon map from one of Keshav's papers, or ask him if there is one.
+
+    # TODO: Now that the ViT training is running on the GPU, do a few runs with the larger images, and use the
+    #  same (16x16 patch) attention maps. Should yield higher final accuracy.
 
     if default_attention_bias_type == "attn_bias_sigmoid":
         default_apply_attention_map: bool = True
@@ -1618,10 +1634,11 @@ def main():
     # print("ABOUT TO PARSE ARGS IN MAIN SCRIPT")
     # print(parser.format_usage())
     
-    args = parser.parse_args()
-    # args = parser.parse_args(argv)
-    
-    set_seed(args.seed)
+    # args = parser.parse_args()
+    args = parser.parse_args(argv)
+   
+    # turn reproducibility on or off 
+    # set_seed(args.seed)
     
     print(f"running using args:\n{args}")
     
@@ -1818,6 +1835,14 @@ def main():
             .batch(args.batch_size)
             .cache()
             .prefetch(tf.data.AUTOTUNE)
+        )
+        
+        # print a visualization of the built model
+        keras.utils.plot_model(
+            model,
+            to_file=f'results/models/vit/visualizations/vit_model_{file_datetime}.png',
+            show_shapes=True,
+            show_layer_names=True
         )
 
         history = model.fit(
@@ -2032,6 +2057,12 @@ def main():
     
     # Average across attention heads for layer 0
     # layer_0_attn = tf.reduce_mean(attention_maps[0], axis=1)
+    
+    # clear keras session to reset layer identifier counters
+    print(f"clearing keras session")
+    keras.backend.clear_session()
+    
+    return float(training_details['test_accuracy'])
 
 if __name__ == "__main__":
     # example command:
