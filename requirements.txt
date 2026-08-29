@@ -15,3 +15,7 @@ tf-explain
 
 opencv-python
 
+pydot
+
+graphviz
+
