@@ -1,0 +1,40 @@
+{
+  "model": "vit",
+  "mode": "perp",
+  "subject": "Subject_4",
+  "n_classes": 12,
+  "metrics": {
+    "accuracy": 0.8583333333333333,
+    "precision_macro": 0.8809191726342599,
+    "recall_macro": 0.8583333333333334,
+    "f1_macro": 0.8498802518800966
+  },
+  "confusion_matrix_path": "results/figs/vit/cm_vit_subject_4_100_epochs_20260827_193621.png",
+  "params": {
+    "image_size": 224,
+    "epochs": 100,
+    "batch_size": 256,
+    "seed": 42,
+    "val_split": 0.1
+  },
+  "training_details": {
+    "image_dimensions": "224x224",
+    "patches_per_dim": "16",
+    "attn_bias": "attn_bias_sigmoid",
+    "bias_strength": 3.25,
+    "epochs": 100,
+    "batch_size": 256,
+    "learning_rate": 5e-05,
+    "val_split": 0.1,
+    "training_set_size": 4320,
+    "training_duration": "00:13:07.515",
+    "max_val_acc": "0.9729",
+    "max_val_acc_epoch": 38,
+    "testing_set_size": 1200,
+    "testing_duration": "00:00:05.964",
+    "processor_type": "Apple M4 Max",
+    "cpu_cores": "16",
+    "gpu_cores": "40",
+    "test_accuracy": "0.8583"
+  }
+}

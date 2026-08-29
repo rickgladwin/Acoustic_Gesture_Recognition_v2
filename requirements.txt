@@ -20,8 +20,9 @@ tf-explain
 opencv-python
 
 #tf2onnx<=1.14.0
-tf2onnx
+pydot
 
+graphviz
 
 #onnx
 onnx<=1.14.1

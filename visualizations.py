@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from keras.src.callbacks import History
 from matplotlib import pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.font_manager as fm
 
@@ -48,8 +49,6 @@ def save_confusion_matrix_png(y_true, y_pred, path, serialized_cm_path: str|None
     cm = confusion_matrix(y_true, y_pred)
     # cm = confusion_matrix(y_true, y_pred, sample_weight=np.ones_like(y_true, dtype=float))
 
-
-
     if cm_title is None:
         cm_title = "Confusion Matrix"
     
@@ -67,39 +66,78 @@ def save_confusion_matrix_png(y_true, y_pred, path, serialized_cm_path: str|None
         caption = create_caption_from_details(details)
     else:
         dummy_details = {
-            "key1": "value1",
-            "second_key": "second_value",
-            "third_key": 123.456,
+            "DUMMY": "DUMMY",
+            "subject": "Subject_3",
+            "image_dimensions": "224x224",
+            "patches_per_dim": "16",
+            "epochs": "200",
+            "batch_size": "256",
+            "learning_rate": "0.0001",
+            "val_split": "0.1",
+            "training_set_size": "4320",
+            "training_duration": "08:08:40.274",
+            "max_val_acc": "0.9875",
+            "max_val_acc_epoch": "13",
+            "testing_set_size": "1200",
+            "testing-duration": "00:00:20.846",
+            "processor_type": "Apple M4 Max",
+            "cpu_cores": "16",
+            "gpu_cores": "40",
+            "test_accuracy": "0.9733",
         }
         # caption = ""
         caption = create_caption_from_details(dummy_details)
 
     # print scikit-learn confusion matrix
     print(f"printing scikit-learn confusion_matrix")
-    fig1, _ = plt.subplots(figsize=(10,8), layout='constrained')
     sklearn_cm_display = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=[x for x in range(12)])
-    sklearn_cm_display.plot(cmap="viridis")
-    plt.figtext(x=0.5, y=-0.75, s=caption, wrap=True, horizontalalignment='center', fontsize=caption_font_size)
-    plt.tight_layout()
-    if cm_title:
-        plt.title(cm_title)
+    # fig_cm, ax_cm = plt.subplots(figsize=(8,12), layout='constrained')
+    fig_cm, ax_cm = plt.subplots(figsize=(8,12))
+    sklearn_cm_display.plot(ax=ax_cm, cmap="viridis", colorbar=False)
+    # plt.figtext(x=0.5, y=-0.75, s=caption, wrap=True, horizontalalignment='center', fontsize=caption_font_size)
+    # fig1.text(x=0.5, y=-0.2, s=caption, ha='center', fontsize=caption_font_size)
+    divider = make_axes_locatable(ax_cm)
+    cax = divider.append_axes("right", size="5%", pad=0.2)
+    fig_cm.colorbar(sklearn_cm_display.im_, cax=cax)
+
+    ax_cm.set_title(label=cm_title, loc='center', pad=10)
+    fig_cm.text(x=0.5, y=0.25, s=caption, ha='center', va='top', fontsize=caption_font_size)
+    fig_cm.tight_layout(rect=( 0, 0.25, 1, 1 ))
+    # plt.tight_layout()
+
+    # cax2 = divider.append_axes("bottom", size="5%", pad=0.2)
+    # fig_cm.set_label("Confusion Matrix")
+    # cax2.set_label(f"\n{caption}")
+    
+    # sklearn_cm_display.figure_.text(0.5, -0.2, caption, ha='center', fontsize=caption_font_size)
+    # fig_cm.text(0.5, -0.2, caption, ha='center', fontsize=caption_font_size)
+    # sklearn_cm_display.figure_.set_figheight(14)
+    # sklearn_cm_display.figure_.set_figwidth(8)
+    # sklearn_cm_display.figure_.tight_layout()
+    # plt.tight_layout()
+    # if cm_title:
+    #     plt.title(cm_title)
+    print(f"saving cm plot to {labelled_cm_path}")
     if labelled_cm_path:
-        plt.savefig(labelled_cm_path, bbox_inches='tight')
-    plt.show(bbox_inches='tight')
+        fig_cm.savefig(labelled_cm_path, bbox_inches='tight')
+    # plt.show(bbox_inches='tight')
+    plt.show()
 
     # print matplotlib confusion matrix
-    fig, ax = plt.subplots(figsize=(10, 12))
-    im = ax.imshow(cm, interpolation="nearest")
-    ax.set_title(cm_title)
-    fig.colorbar(im, ax=ax)
-    ax.set_xlabel(f"Predicted\n\n{caption}", fontdict={'size': caption_font_size})
-    ax.set_ylabel("True")
-    # set the class labels on the x and y axes explicitly
-    ax.set_xticks(np.arange(len(np.unique(y_pred))))
-    ax.set_yticks(np.arange(len(np.unique(y_true))))
-    fig.tight_layout()
-    plt.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close(fig)
+    if False:
+        fig, ax = plt.subplots(figsize=(10, 18))
+        im = ax.imshow(cm, interpolation="nearest", cmap="inferno")
+        ax.set_title(cm_title)
+        fig.colorbar(im, ax=ax)
+        ax.set_xlabel(f"Predicted\n\n{caption}", fontdict={'size': caption_font_size})
+        ax.set_ylabel("True")
+        # set the class labels on the x and y axes explicitly
+        ax.set_xticks(np.arange(len(np.unique(y_pred))))
+        ax.set_yticks(np.arange(len(np.unique(y_true))))
+        fig.tight_layout()
+        plt.show()
+        plt.savefig(path, dpi=150, bbox_inches='tight')
+        plt.close(fig)
 
 
 def create_caption_from_details(details: dict) -> str:
@@ -230,6 +268,8 @@ def plot_history_separately(training_history: History, loss_plot_title: str|None
     else:
         training_acc_key = 'acc'
     
+    print(f"using training_acc_key '{training_acc_key}'")
+    
     if training_acc_key in training_history.history:
         ax2.plot(training_history.history[training_acc_key], label='Train Accuracy', color='blue', linewidth=1)
     
@@ -239,6 +279,8 @@ def plot_history_separately(training_history: History, loss_plot_title: str|None
         validation_acc_key = 'val_accuracy'
     else:
         validation_acc_key = 'val_acc'
+    
+    print(f"using vaidation_acc_key '{validation_acc_key}'")
     
     if validation_acc_key in training_history.history:
         ax2.plot(training_history.history[validation_acc_key], label='Val Accuracy', color='orange', linestyle='-', linewidth=1.5)
