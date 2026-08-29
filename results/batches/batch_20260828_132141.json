@@ -1,0 +1,1 @@
+{"attn_bias_sigmoid": [{"epochs": 100, "attn_bias_strength": 0.0, "training_run_duration": "0:12:36.925508", "test_accuracy": 0.96}, {"epochs": 100, "attn_bias_strength": 0.0, "training_run_duration": "0:12:35.168430", "test_accuracy": 0.98}, {"epochs": 100, "attn_bias_strength": 0.0, "training_run_duration": "0:12:43.154815", "test_accuracy": 0.5567}]}
