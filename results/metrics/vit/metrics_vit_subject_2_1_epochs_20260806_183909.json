@@ -1,0 +1,20 @@
+{
+  "model": "vit",
+  "mode": "perp",
+  "subject": "Subject_2",
+  "n_classes": 12,
+  "metrics": {
+    "accuracy": 0.0975,
+    "precision_macro": 0.11973986506136218,
+    "recall_macro": 0.09749999999999999,
+    "f1_macro": 0.03522336400993556
+  },
+  "confusion_matrix_path": "results/figs/vit/cm_vit_subject_2_1_epochs_20260806_183909.png",
+  "params": {
+    "image_size": 320,
+    "epochs": 1,
+    "batch_size": 256,
+    "seed": 42,
+    "val_split": 0.1
+  }
+}
