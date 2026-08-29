@@ -1,6 +1,10 @@
 #tensorflow==2.11.*
-tensorflow==2.13.*
+#tensorflow==2.13.*
+tensorflow
 tensorflow-metal
+# numpy # was 2.2.6 unconstrained
+#numpy==1.24.3
+#numpy<1.24
 numpy
 scikit-learn
 matplotlib
@@ -15,3 +19,12 @@ tf-explain
 
 opencv-python
 
+#tf2onnx<=1.14.0
+tf2onnx
+
+
+#onnx
+onnx<=1.14.1
+onnxruntime
+
+keras
