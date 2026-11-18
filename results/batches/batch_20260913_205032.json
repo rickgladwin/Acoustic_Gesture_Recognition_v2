@@ -1,0 +1,1 @@
+{"attn_bias_patch_combo": [{"epochs": 1, "attn_bias_strength": 1.0, "training_run_duration": "0:02:44.561060", "test_accuracy": 0.085}]}
