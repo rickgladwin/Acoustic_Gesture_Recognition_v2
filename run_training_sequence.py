@@ -20,23 +20,23 @@ attn_bias_types_and_strengths: dict[str, list[float]] = {
     # 'attn_bias_sigmoid': [ 0.75, 1.0 ],
     # 'attn_bias_combo':   [ 0.10 ],
     # 'attn_bias_sigmoid': [ 0.75 ],
-    # 'attn_bias_combo':   [ 0.10, 0.75 ],
+    'attn_bias_combo':   [ 0.10, 0.75 ],
     # 'attn_bias_combo': [ x / 100 for x in range(200, 610, 25) ],
     # 'attn_bias_sigmoid': [ 0.25, 0.50, 0.75, 1.00, 2.00, 4.00, 6.00, 10.00, 15.00, 20.00 ],
     # 'attn_bias_sigmoid': [ 0.75, 1.00, 6.00, 10.00, 15.00, 20.00 ],
-    'attn_bias_sigmoid': [
-        0.00, 0.00, 0.00,
-        0.01, 0.01, 0.01,
-        0.10, 0.10, 0.10,
-        0.25, 0.25, 0.25,
+    # 'attn_bias_sigmoid': [
+    #     0.00, 0.00, 0.00,
+    #     0.01, 0.01, 0.01,
+    #     0.10, 0.10, 0.10,
+    #     0.25, 0.25, 0.25,
         # 0.50, 0.50, 0.50,
         # 0.75, 0.75, 0.75,
         # 1.00, 1.00, 1.00,
-        2.00, 2.00, 2.00,
-        4.00, 4.00, 4.00,
-        6.00, 6.00, 6.00,
-        8.00, 8.00, 8.00,
-    ],
+        # 2.00, 2.00, 2.00,
+        # 4.00, 4.00, 4.00,
+        # 6.00, 6.00, 6.00,
+        # 8.00, 8.00, 8.00,
+    # ],
     # 'attn_bias_sigmoid': [ x / 100 for x in range(200, 610, 25) ],
     # 'attn_bias_sigmoid': [ 0.00, 0.10, 0.25, 0.50, 0.75, 1.00, 2.00, 4.00, 6.00, 10.00, 15.00, 20.00 ],
     # 'attn_bias_combo':   [ 0.00, 0.10, 0.25, 0.50, 0.75, 1.00, 2.00, 4.00, 6.00, 10.00, 15.00, 20.00 ],
@@ -44,7 +44,8 @@ attn_bias_types_and_strengths: dict[str, list[float]] = {
 
 # epoch_counts: list[int] = [ 1, 5, 20 ]
 # epoch_counts: list[int] = [ 1 ]
-epoch_counts: list[int] = [ 150 ]
+epoch_counts: list[int] = [ 2 ]
+# epoch_counts: list[int] = [ 150 ]
 
 # 200 epochs * 2 bias types * 6 attention bias strengths * 8s/epoch == 9600s == 160m == 2h40m
 
