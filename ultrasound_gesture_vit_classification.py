@@ -5,7 +5,7 @@ import json
 import argparse
 from datetime import datetime
 from symtable import Function
-
+import pprint as pp
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -247,14 +247,70 @@ def mlp(x, hidden_units, dropout_rate):
 #         return encoded_patches * scale
 
 
+# this version of PatchAttentionBias works but results in mixed CPU/GPU use during training
+# @keras.saving.register_keras_serializable()
+# class PatchAttentionBias(keras.layers.Layer):
+#     """
+#     Adds a fixed spatial patch-importance bias to encoded patch tokens.
+# 
+#     This does not directly alter self-attention logits, but it makes high-bias
+#     patches produce stronger token representations, which can affect later
+#     attention layers.
+#     """
+#     def __init__(self, bias_2d, strength=1.0, **kwargs):
+#         super().__init__(**kwargs)
+# 
+#         bias_2d = np.asarray(bias_2d, dtype="float32")
+#         bias_1d = bias_2d.reshape(-1)
+# 
+#         self.bias_2d_config = bias_2d.tolist()
+#         self.strength = float(strength)
+#         self.num_patches = int(bias_1d.shape[0])
+# 
+#         self.bias_1d = self.add_weight(
+#             name="patch_attention_bias",
+#             shape=(self.num_patches,),
+#             initializer=keras.initializers.Constant(bias_1d),
+#             trainable=False,
+#             dtype=tf.float32,
+#         )
+# 
+#     def call(self, encoded_patches):
+#         """
+#         encoded_patches shape:
+#             (batch, num_patches, projection_dim)
+#         """
+# 
+#         bias = tf.cast(self.bias_1d, encoded_patches.dtype)
+# 
+#         # Shape: (1, num_patches, 1)
+#         bias = tf.reshape(bias, [1, -1, 1])
+# 
+#         # Convert [0, 1] into multiplicative scale.
+#         # If strength = 1:
+#         #   bias 0 -> scale 1
+#         #   bias 1 -> scale 2
+#         scale = 1.0 + self.strength * bias
+# 
+#         return encoded_patches * scale
+# 
+#     def get_config(self):
+#         config = super().get_config()
+#         config.update({
+#             "bias_2d": self.bias_2d_config,
+#             "strength": self.strength,
+#         })
+#         return config
+
+
+# PatchAttentionBias using tensorflow tensors, avoiding mixed CPU/GPU use in training
 @keras.saving.register_keras_serializable()
 class PatchAttentionBias(keras.layers.Layer):
     """
     Adds a fixed spatial patch-importance bias to encoded patch tokens.
 
-    This does not directly alter self-attention logits, but it makes high-bias
-    patches produce stronger token representations, which can affect later
-    attention layers.
+    This layer is intentionally implemented with TensorFlow ops only in call()
+    so it can be placed on the GPU/Metal device during training.
     """
     def __init__(self, bias_2d, strength=1.0, **kwargs):
         super().__init__(**kwargs)
@@ -279,17 +335,15 @@ class PatchAttentionBias(keras.layers.Layer):
         encoded_patches shape:
             (batch, num_patches, projection_dim)
         """
+        encoded_dtype = encoded_patches.dtype
 
-        bias = tf.cast(self.bias_1d, encoded_patches.dtype)
+        bias = tf.cast(self.bias_1d, encoded_dtype)
+        strength = tf.cast(self.strength, encoded_dtype)
 
-        # Shape: (1, num_patches, 1)
         bias = tf.reshape(bias, [1, -1, 1])
 
-        # Convert [0, 1] into multiplicative scale.
-        # If strength = 1:
-        #   bias 0 -> scale 1
-        #   bias 1 -> scale 2
-        scale = 1.0 + self.strength * bias
+        one = tf.ones([], dtype=encoded_dtype)
+        scale = one + strength * bias
 
         return encoded_patches * scale
 
@@ -300,6 +354,7 @@ class PatchAttentionBias(keras.layers.Layer):
             "strength": self.strength,
         })
         return config
+
 
 
 # try to get around the Lion bug in keras 2.13.1
@@ -437,6 +492,7 @@ def build_patch_biased_vit_with_attention_output(
     This model builder uses PatchAttentionBias to add attention bias to
     the patches. This is easy to test and unlikely to break training.
     """
+    print(f"building model with input patch bias of strength {attention_bias_strength}")
     # TODO: add a CLS token for attention visualization?
     h, w, _ = input_shape
     num_patches = (h // patch_size) * (w // patch_size)
@@ -461,9 +517,24 @@ def build_patch_biased_vit_with_attention_output(
     # In another implementation, we will apply the attention bias to the MultiHeadAttention layers,
     # which should have a more pronounced effect on the model results.
     if apply_patch_bias_attention_map:
-        encoded = PatchAttentionBias(
-            bias_2d=attention_patch_bias_map,
-            strength=1.0
+        # old (working)
+        # encoded = PatchAttentionBias(
+        #     bias_2d=attention_patch_bias_map,
+        #     strength=attention_bias_strength,
+        # )(encoded)
+        
+        # TEST
+        bias_1d = np.asarray(attention_patch_bias_map, dtype="float32").reshape(-1)
+        bias_tensor = tf.constant(bias_1d.reshape(1, -1, 1), dtype=tf.float32)
+        attention_bias_strength_value = float(attention_bias_strength)
+
+        encoded = keras.layers.Lambda(
+            lambda x: x * (
+                    tf.cast(1.0, x.dtype)
+                    + tf.cast(attention_bias_strength_value, x.dtype)
+                    * tf.cast(bias_tensor, x.dtype)
+            ),
+            name="apply_patch_attention_bias",
         )(encoded)
 
     # Initialize a variable to store the final attention map
@@ -486,14 +557,12 @@ def build_patch_biased_vit_with_attention_output(
 
     # TODO: build attention bias based on JetBrains AI Assistant (2026b)
 
-
     # create an attention mask tensor, assuming the attention mask is the same for every image in the batch
     # attention_mask_tensor: tf.Tensor = attention_tensor_from_2d_mask(attention_mask)
     # print(f"attention_tensor shape: {attention_mask_tensor.shape}")
 
     for i in range(transformer_layers):
         x1 = keras.layers.LayerNormalization(epsilon=1e-6)(encoded)
-        # TODO: pass an argument for attention bias to the model
         # Instantiate the MHA layer
         attn_layer = keras.layers.MultiHeadAttention(
             num_heads=num_heads, key_dim=projection_dim, dropout=0.1
@@ -560,6 +629,7 @@ def build_patch_biased_vit_with_attention_output(
         decay=weight_decay,
     )
 
+    # faster on M4 Max for ViT
     # model_optimizer = tf.keras.mixed_precision.legacy.LossScaleOptimizer(
     #     tf.keras.optimizers.Lion(
     #         learning_rate=learning_rate,
@@ -574,7 +644,6 @@ def build_patch_biased_vit_with_attention_output(
         # optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
         # fixes slowdown on Mac silicon
         # optimizer=keras.optimizers.legacy.Adam(learning_rate=learning_rate),
-        # faster on M4 Max for ViT
         optimizer=model_optimizer,
         # loss=keras.losses.SparseCategoricalCrossentropy(from_logits=True),
         # metrics=[keras.metrics.SparseCategoricalAccuracy(name="accuracy")],
@@ -1414,6 +1483,10 @@ def plot_attention_map(model, image, patch_size=32, details: dict|None=None, sav
         # end TEST
     else:
         plt.show()
+        
+def save_training_history(history, filepath):
+    with open(filepath, 'w') as f:
+        json.dump(history.history, f)
 
 
 # ============================
@@ -1516,7 +1589,7 @@ def main(argv=None):
     # default_load_model: str = f"results/models/vit/vit_perp_subject_2_1_epochs_320px_attn_True_20260806_145000.keras"
     # default_load_model: str = f"results/models/vit/vit_perp_subject_1_50_epochs_224px_14_patch_size_attn_True_20260815_115505.keras"
     default_load_model: str = ""
-
+    
     default_metrics_filepath: str = f"results/metrics/vit/metrics_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.json"
     default_confusion_matrix_filepath: str = f"results/figs/vit/cm_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.png"
     # for saving a series of intermediate attention maps
@@ -1534,7 +1607,8 @@ def main(argv=None):
     # default_applied_patch_bias_attention_map_filepath: str = f"/Users/rickgladwin/Code/u_of_hull/dissertation/Integrated-Decision-Gradients/results/attribution_maps/attrib_map_combo_norm_20260817_005014.npy"
     
     # default_attention_bias_type: str = "attn_bias_sigmoid"    # sigmoid attention bias applied to attention weights
-    default_attention_bias_type: str = "attn_bias_combo"      # combined from all gestures (normalized, no filter) attention bias applied to attention weights
+    # default_attention_bias_type: str = "attn_bias_combo"      # combined from all gestures (normalized, no filter) attention bias applied to attention weights
+    default_attention_bias_type: str = ""                       # no attention bias
     
     # when applying attention bias in the transformer layers,
     # the bias strength acts as a multiplier for the bias values.
@@ -1555,9 +1629,12 @@ def main(argv=None):
     if default_attention_bias_type == "attn_bias_sigmoid":
         default_apply_attention_map: bool = True
         default_applied_attention_map_filepath: str = f"/Users/rickgladwin/Code/u_of_hull/dissertation/Integrated-Decision-Gradients/results/attribution_maps/attrib_map_combo_sigmoid_x0=0p65_w=0p15_20260817_005014.npy"
-    if default_attention_bias_type == "attn_bias_combo":
+    elif default_attention_bias_type == "attn_bias_combo":
         default_apply_attention_map: bool = True
         default_applied_attention_map_filepath: str = f"/Users/rickgladwin/Code/u_of_hull/dissertation/Integrated-Decision-Gradients/results/attribution_maps/attrib_map_combo_norm_20260817_005014.npy"
+    else:
+        default_apply_attention_map: bool = False
+        default_applied_attention_map_filepath: str = ""
 
     # default_attention_bias_type: str = "none"                 # no attention bias applied
     # default_attention_bias_type: str = "mask_all_threshold"   # thresholded boolean attention mask applied to all transformer layers
@@ -1568,7 +1645,7 @@ def main(argv=None):
     # bias strength is not applied in these models
     if default_attention_bias_type in ["none"]:
         default_attention_bias_strength = 0.0
-    # attention bias or attention mask is applied without bias in these models
+    # attention patch bias or attention mask is applied with 100% bias in these models
     if default_attention_bias_type in ["mask_all_threshold", "mask_first_threshold", "patch_bias_sigmoid", "patch_bias_combo"]:
         default_attention_bias_strength = 1.0
     
@@ -1579,6 +1656,9 @@ def main(argv=None):
     
     # TODO: include global tensorflow precision setting in training details
     # TODO: include model type in title for loss + acc plots
+    
+    default_save_training_history: bool = False
+    default_save_training_history_filepath: str = f"results/training_history/vit/history_vit_subject_{default_subject_id}_{default_epochs}_epochs_{file_datetime}.json"
     
     parser = argparse.ArgumentParser(description=f"Run ViT on Subject_{default_subject_id} ultrasound data with progress bars.")
     # Paths / data
@@ -1631,6 +1711,8 @@ def main(argv=None):
     parser.add_argument("--attention-bias-type", type=str, default=default_attention_bias_type, help="Type of attention bias to apply to model")
     parser.add_argument("--attention-bias-strength", type=float, default=default_attention_bias_strength, help="Strength of transformer layer attention bias, if applied.")
     
+    parser.add_argument("--save-training-history", type=bool, default=False, help="Whether to save training history")
+    parser.add_argument("--save-training-history-filepath", type=str, default=default_save_training_history_filepath, help="Path to save training history")
     # print("ABOUT TO PARSE ARGS IN MAIN SCRIPT")
     # print(parser.format_usage())
     
@@ -1641,6 +1723,14 @@ def main(argv=None):
     # set_seed(args.seed)
     
     print(f"running using args:\n{args}")
+    # args is an object of class argparse.Namespace
+    # vars(args) returns a dictionary of the attributes of args
+    pp.pprint(vars(args))
+    
+    # TEST
+    # show CPU vs GPU use
+    # tf.debugging.set_log_device_placement(True)
+    # print(tf.config.list_physical_devices("GPU"))
     
     # Load data
     print(f"-- Loading data from: {args.root}...")
@@ -1712,6 +1802,7 @@ def main(argv=None):
 
     # Build or load model
     if args.load_model and os.path.isfile(args.load_model):
+        # load model
         print(f"Loading model from: {args.load_model}")
         # model = keras.models.load_model(args.load_model, compile=False)
         model = keras.models.load_model(
@@ -1730,31 +1821,33 @@ def main(argv=None):
         )
         trained = True
     else:
-        model = model_builder_function(
-            input_shape=input_shape,
-            num_classes=num_classes,
-            patch_size=args.patch_size, # was 32
-            projection_dim=args.projection_dim, # was 64
-            num_heads=args.num_heads, # was 8
-            transformer_layers=args.num_layers, # was 6
-            transformer_units=(128, 64),
-            mlp_head_units=(512, 256),
-            learning_rate=args.lr,
-            weight_decay=args.weight_decay,
-            
-            apply_attention_mask=args.apply_attention_mask,
-            # TODO: implement attention mask loader for all layers
-            # TODO: implement attention mask loader for first layer only?
-            applied_attention_mask_path=args.applied_attention_mask_path,
-            
-            apply_patch_bias_attention_map=args.apply_patch_bias_attention_map,
-            applied_patch_bias_attention_map_path=args.applied_patch_bias_attention_map_path,
-            
-            apply_attention_map=args.apply_attention_map,
-            applied_attention_map_path=args.applied_attention_map_path,
-            
-            attention_bias_strength=args.attention_bias_strength
-        )
+        # build model
+        with tf.device("/GPU:0"):
+            model = model_builder_function(
+                input_shape=input_shape,
+                num_classes=num_classes,
+                patch_size=args.patch_size, # was 32
+                projection_dim=args.projection_dim, # was 64
+                num_heads=args.num_heads, # was 8
+                transformer_layers=args.num_layers, # was 6
+                transformer_units=(128, 64),
+                mlp_head_units=(512, 256),
+                learning_rate=args.lr,
+                weight_decay=args.weight_decay,
+                
+                apply_attention_mask=args.apply_attention_mask,
+                # TODO: implement attention mask loader for all layers
+                # TODO: implement attention mask loader for first layer only?
+                applied_attention_mask_path=args.applied_attention_mask_path,
+                
+                apply_patch_bias_attention_map=args.apply_patch_bias_attention_map,
+                applied_patch_bias_attention_map_path=args.applied_patch_bias_attention_map_path,
+                
+                apply_attention_map=args.apply_attention_map,
+                applied_attention_map_path=args.applied_attention_map_path,
+                
+                attention_bias_strength=args.attention_bias_strength
+            )
         trained = False
 
     # Choose callbacks / logging
@@ -1810,6 +1903,16 @@ def main(argv=None):
         "val_split": args.val_split,
     }
     
+    # TEST
+    # check architecture and training details
+    print("@@@@@@@ patch_size:", args.patch_size)
+    print("@@@@@@@ projection_dim:", args.projection_dim)
+    print("@@@@@@@ num_heads:", args.num_heads)
+    print("@@@@@@@ num_layers:", args.num_layers)
+    print("@@@@@@@ batch_size:", args.batch_size)
+    print("@@@@@@@ mixed precision policy:", tf.keras.mixed_precision.global_policy())
+    model.summary()
+    
     history: keras.callbacks.History|None = None
     
     # Train (unless we loaded a pre-trained model)
@@ -1845,13 +1948,17 @@ def main(argv=None):
             show_layer_names=True
         )
 
-        history = model.fit(
-            train_ds,
-            epochs=args.epochs,
-            validation_data=val_ds,
-            callbacks=callbacks,
-            verbose=verbose,
-        )
+        with tf.device("/GPU:0"):
+            history = model.fit(
+                train_ds,
+                epochs=args.epochs,
+                validation_data=val_ds,
+                callbacks=callbacks,
+                verbose=verbose,
+            )
+        
+        if args.save_training_history and history is not None:
+            save_training_history(history, args.save_training_history_filepath)
         
         # model training without tensor preprocessing
         # history = model.fit(
@@ -1879,7 +1986,7 @@ def main(argv=None):
         
         acc_key: str = 'val_dense_19_accuracy'
         train_acc_key: str = 'dense_19_accuracy'
-        
+        # TODO: manage the accuracy key name based on attention bias type
         if args.apply_attention_map:
             # model with attention map applied to all transformer layers uses a different acc key
             acc_key = 'val_dense_51_accuracy'
